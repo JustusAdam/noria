@@ -108,12 +108,6 @@ fn main() {
                 .multiple(true)
                 .help("Enable verbose output"),
         )
-        .arg(
-            Arg::with_name("info")
-                .short("i")
-                .takes_value(true)
-                .help("Directory to dump runtime process info (doesn't work on OSX)"),
-        )
         .get_matches();
     let verbose = args.occurrences_of("verbose");
     let nusers = value_t_or_exit!(args, "nusers", usize);
@@ -122,7 +116,6 @@ fn main() {
     let nposts = value_t_or_exit!(args, "nposts", usize);
     let private = value_t_or_exit!(args, "private", f64);
     let runtime = Duration::from_secs(value_t_or_exit!(args, "runtime", u64));
-    let iloc = args.value_of("info").map(std::path::Path::new);
 
     assert!(nusers >= STUDENTS_PER_CLASS + TAS_PER_CLASS);
     assert!(loggedf >= 0.0);
@@ -131,13 +124,6 @@ fn main() {
     assert!(nlogged <= nusers);
     assert!(private >= 0.0);
     assert!(private <= 1.0);
-
-    if let Some(ref iloc) = iloc {
-        if !iloc.exists() {
-            std::fs::create_dir_all(iloc)
-                .expect("failed to create directory for runtime process info");
-        }
-    }
 
     let log = if verbose != 0 {
         noria::logger_pls()
@@ -254,7 +240,34 @@ fn main() {
     let mut cold_stats = HashMap::new();
     let mut warm_stats = HashMap::new();
 
+    let memstats = |g: &mut noria::SyncHandle<_>, at| {
+        if let Ok(mem) = std::fs::read_to_string("/proc/self/statm") {
+            debug!(log, "extracing process memory stats"; "at" => at);
+            let vmrss = mem.split_whitespace().nth(2 - 1).unwrap();
+            let data = mem.split_whitespace().nth(6 - 1).unwrap();
+            println!("# VmRSS @ {}: {} ", at, vmrss);
+            println!("# VmData @ {}: {} ", at, data);
+        }
+
+        debug!(log, "extracing materialization memory stats"; "at" => at);
+        let mut base_mem = 0;
+        let mut mem = 0;
+        let stats = g.statistics().unwrap();
+        for (_, nstats) in stats.values() {
+            for nstat in nstats.values() {
+                if nstat.desc == "B" {
+                    base_mem += nstat.mem_size;
+                } else {
+                    mem += nstat.mem_size;
+                }
+            }
+        }
+        println!("# base memory @ {}: {}", at, base_mem);
+        println!("# materialization memory @ {}: {}", at, mem);
+    };
+
     info!(log, "logging in users"; "n" => nlogged);
+    memstats(&mut g, "populated");
     let mut login_times = Vec::with_capacity(nlogged);
     let mut login_stats = Histogram::<u64>::new_with_bounds(10, 1_000_000, 4).unwrap();
     for uid in 1..=nlogged {
@@ -270,17 +283,12 @@ fn main() {
         // TODO: measure space use, which means doing reads on partial
         // TODO: or do we want to do that measurement separately?
 
-        if let Some(ref iloc) = iloc {
-            if uid % 100 == 0 {
-                std::fs::copy(
-                    "/proc/self/status",
-                    iloc.join(format!("login-{}.status", uid)),
-                )
-                .expect("failed to extract process info");
-            }
+        if uid == 1 {
+            memstats(&mut g, "firstuser");
         }
     }
     cold_stats.insert(Operation::Login, login_stats);
+    memstats(&mut g, "allusers");
 
     info!(log, "creating api handles");
     debug!(log, "creating view handles for posts");
@@ -421,30 +429,7 @@ fn main() {
             .unwrap();
         post_count_view[uid - 1].multi_lookup(cids, true).unwrap();
     }
-
-    if let Ok(mem) = std::fs::read_to_string("/proc/self/statm") {
-        debug!(log, "extracing process memory stats");
-        let vmrss = mem.split_whitespace().nth(2 - 1).unwrap();
-        let data = mem.split_whitespace().nth(6 - 1).unwrap();
-        println!("# VmRSS: {} ", vmrss);
-        println!("# VmData: {} ", data);
-    }
-
-    debug!(log, "extracing materialization memory stats");
-    let mut base_mem = 0;
-    let mut mem = 0;
-    let stats = g.statistics().unwrap();
-    for (_, nstats) in stats.values() {
-        for nstat in nstats.values() {
-            if nstat.desc == "B" {
-                base_mem += nstat.mem_size;
-            } else {
-                mem += nstat.mem_size;
-            }
-        }
-    }
-    println!("# base memory: {}", base_mem);
-    println!("# materialization memory: {}", mem);
+    memstats(&mut g, "end");
 
     info!(log, "performing write measurements");
     let mut pid = nposts + 1;
