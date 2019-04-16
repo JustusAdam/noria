@@ -410,7 +410,7 @@ fn main() {
             .saturating_record(took.as_micros() as u64);
     }
 
-    info!(log, "measuring space overhead measurement");
+    info!(log, "measuring space overhead");
     debug!(log, "performing reads to fill materializations");
     // have every user read every class so that we can measure total space overhead
     for (&uid, cids) in &enrolled {
@@ -423,6 +423,7 @@ fn main() {
     }
 
     if let Ok(mem) = std::fs::read_to_string("/proc/self/statm") {
+        debug!(log, "extracing process memory stats");
         let vmrss = mem.split_whitespace().nth(2 - 1).unwrap();
         let data = mem.split_whitespace().nth(6 - 1).unwrap();
         println!("# VmRSS: {} ", vmrss);
@@ -506,10 +507,17 @@ fn main() {
             i += stripe;
         }
     }
-    println!("# number of cold posts reads: {}", posts_reads);
-    println!("# number of cold post count reads: {}", post_count_reads);
     println!(
-        "# number of post writes: {}",
+        "# number of cold posts reads (in {:?}): {}",
+        runtime, posts_reads
+    );
+    println!(
+        "# number of cold post count reads (in {:?}): {}",
+        runtime, post_count_reads
+    );
+    println!(
+        "# number of post writes (in {:?}): {}",
+        runtime,
         post_writes * WRITE_CHUNK_SIZE
     );
     println!("# op\tphase\tpct\ttime");
