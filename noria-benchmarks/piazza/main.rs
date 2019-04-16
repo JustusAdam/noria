@@ -201,12 +201,12 @@ fn main() {
     debug!(log, "database schema setup done");
 
     info!(log, "starting db population");
-    debug!(log, "creating users");
+    debug!(log, "creating users"; "n" => nusers);
     let mut users = g.table("User").unwrap().into_sync();
     users
         .perform_all((1..=nusers).map(|uid| vec![uid.into()]))
         .unwrap();
-    debug!(log, "creating classes");
+    debug!(log, "creating classes"; "n" => nclasses);
     let mut classes = g.table("Class").unwrap().into_sync();
     classes
         .perform_all((1..=nclasses).map(|cid| vec![cid.into()]))
@@ -231,7 +231,7 @@ fn main() {
         );
     }
     roles.perform_all(records).unwrap();
-    debug!(log, "writing posts");
+    debug!(log, "writing posts"; "n" => nposts);
     let mut posts = g.table("Post").unwrap().into_sync();
     posts
         .perform_all((1..=nposts).map(|pid| {
@@ -254,7 +254,7 @@ fn main() {
     let mut cold_stats = HashMap::new();
     let mut warm_stats = HashMap::new();
 
-    info!(log, "logging in users");
+    info!(log, "logging in users"; "n" => nlogged);
     let mut login_times = Vec::with_capacity(nlogged);
     let mut login_stats = Histogram::<u64>::new_with_bounds(10, 1_000_000, 4).unwrap();
     for uid in 1..=nlogged {
@@ -410,7 +410,8 @@ fn main() {
             .saturating_record(took.as_micros() as u64);
     }
 
-    info!(log, "performing reads for space overhead measurement");
+    info!(log, "measuring space overhead measurement");
+    debug!(log, "performing reads to fill materializations");
     // have every user read every class so that we can measure total space overhead
     for (&uid, cids) in &enrolled {
         for cids in cids.chunks(10) {
