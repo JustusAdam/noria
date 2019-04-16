@@ -73,13 +73,10 @@ fn main() {
                 .help("Number of users in the db"),
         )
         .arg(
-            Arg::with_name("nlogged")
+            Arg::with_name("logged-in")
                 .short("l")
-                .default_value("1000")
-                .help(
-                    "Number of logged users. \
-                     Must be less or equal than the number of users in the db",
-                ),
+                .default_value("1.0")
+                .help("Fraction of users that are logged in."),
         )
         .arg(
             Arg::with_name("nclasses")
@@ -120,7 +117,7 @@ fn main() {
         .get_matches();
     let verbose = args.occurrences_of("verbose");
     let nusers = value_t_or_exit!(args, "nusers", usize);
-    let nlogged = value_t_or_exit!(args, "nlogged", usize);
+    let loggedf = value_t_or_exit!(args, "logged-in", f64);
     let nclasses = value_t_or_exit!(args, "nclasses", usize);
     let nposts = value_t_or_exit!(args, "nposts", usize);
     let private = value_t_or_exit!(args, "private", f64);
@@ -128,6 +125,9 @@ fn main() {
     let iloc = args.value_of("info").map(std::path::Path::new);
 
     assert!(nusers >= STUDENTS_PER_CLASS + TAS_PER_CLASS);
+    assert!(loggedf >= 0.0);
+    assert!(loggedf <= 1.0);
+    let nlogged = (loggedf * nusers as f64) as usize;
     assert!(nlogged <= nusers);
     assert!(private >= 0.0);
     assert!(private <= 1.0);
