@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 
 const STUDENTS_PER_CLASS: usize = 150;
 const TAS_PER_CLASS: usize = 5;
+const WRITE_CHUNK_SIZE: usize = 100;
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, Ord, PartialOrd)]
 enum Operation {
@@ -68,13 +69,13 @@ fn main() {
         .arg(
             Arg::with_name("nusers")
                 .short("u")
-                .default_value("5000")
+                .default_value("1000")
                 .help("Number of users in the db"),
         )
         .arg(
             Arg::with_name("nlogged")
                 .short("l")
-                .default_value("5000")
+                .default_value("1000")
                 .help(
                     "Number of logged users. \
                      Must be less or equal than the number of users in the db",
@@ -83,13 +84,13 @@ fn main() {
         .arg(
             Arg::with_name("nclasses")
                 .short("c")
-                .default_value("1000")
+                .default_value("100")
                 .help("Number of classes in the db"),
         )
         .arg(
             Arg::with_name("nposts")
                 .short("p")
-                .default_value("1000000")
+                .default_value("100000")
                 .help("Number of posts in the db"),
         )
         .arg(
@@ -250,7 +251,8 @@ fn main() {
         .unwrap();
     debug!(log, "population completed");
 
-    let mut stats = HashMap::new();
+    let mut cold_stats = HashMap::new();
+    let mut warm_stats = HashMap::new();
 
     info!(log, "logging in users");
     let mut login_times = Vec::with_capacity(nlogged);
@@ -278,106 +280,50 @@ fn main() {
             }
         }
     }
-    stats.insert(Operation::Login, login_stats);
+    cold_stats.insert(Operation::Login, login_stats);
 
     info!(log, "creating api handles");
     debug!(log, "creating view handles for posts");
-    let mut posts_view: Vec<_> = (1..=nusers)
+    let mut posts_view: Vec<_> = (1..=nlogged)
         .map(|uid| {
             trace!(log, "creating posts handle for user"; "uid" => uid);
             g.view(format!("posts_u{}", uid)).unwrap().into_sync()
         })
         .collect();
     debug!(log, "creating view handles for post_count");
-    let mut post_count_view: Vec<_> = (1..=nusers)
+    let mut post_count_view: Vec<_> = (1..=nlogged)
         .map(|uid| {
             trace!(log, "creating post count handle for user"; "uid" => uid);
             g.view(format!("post_count_u{}", uid)).unwrap().into_sync()
         })
         .collect();
     debug!(log, "all api handles created");
-    let setup = init.elapsed();
+
+    println!("# setup time: {:?}", init.elapsed());
 
     // now time to measure the cost of different operations
-    info!(log, "starting benchmark");
-    let mut n = 0;
-    let mut pid = nposts + 1;
+    info!(log, "starting cold read benchmarks");
+    debug!(log, "cold reads of posts");
+    let mut posts_reads = 0;
     let start = Instant::now();
+    let mut requests = Vec::new();
     while start.elapsed() < runtime {
-        let seed = rng.gen_range(0.0, 1.0);
-        let operation = if seed < 0.95 {
-            if seed < 0.95 / 2.0 {
-                Operation::ReadPosts
-            } else {
-                Operation::ReadPostCount
+        trace!(log, "reading posts");
+        // TODO: maybe only select from eligible users?
+        let begin = loop {
+            let uid = 1 + rng.gen_range(0, nlogged);
+            trace!(log, "trying user"; "uid" => uid);
+            if let Some(cids) = enrolled.get(&uid) {
+                let cid = *cids.choose(&mut rng).unwrap();
+                trace!(log, "chose class"; "cid" => cid);
+                requests.push((Operation::ReadPosts, uid, cid));
+                let start = Instant::now();
+                posts_view[uid - 1].lookup(&[cid.into()], true).unwrap();
+                break start;
             }
-        } else {
-            Operation::WritePost
-        };
-
-        let begin = match operation {
-            Operation::ReadPosts => {
-                trace!(log, "reading posts"; "seed" => seed);
-                // TODO: maybe only select from eligible users?
-                loop {
-                    let uid = 1 + rng.gen_range(0, nusers);
-                    trace!(log, "trying user"; "uid" => uid);
-                    if let Some(cids) = enrolled.get(&uid) {
-                        let cid = *cids.choose(&mut rng).unwrap();
-                        trace!(log, "chose class"; "cid" => cid);
-                        let start = Instant::now();
-                        posts_view[uid - 1].lookup(&[cid.into()], true).unwrap();
-                        break start;
-                    }
-                }
-            }
-            Operation::ReadPostCount => {
-                trace!(log, "reading post count"; "seed" => seed);
-                // TODO: maybe only select from eligible users?
-                loop {
-                    let uid = 1 + rng.gen_range(0, nusers);
-                    trace!(log, "trying user"; "uid" => uid);
-                    if let Some(cids) = enrolled.get(&uid) {
-                        let cid = *cids.choose(&mut rng).unwrap();
-                        trace!(log, "chose class"; "cid" => cid);
-                        let start = Instant::now();
-                        post_count_view[uid - 1]
-                            .lookup(&[cid.into()], true)
-                            .unwrap();
-                        break start;
-                    }
-                }
-            }
-            Operation::WritePost => {
-                trace!(log, "writing post"; "seed" => seed);
-                loop {
-                    let uid = 1 + rng.gen_range(0, nusers);
-                    trace!(log, "trying user"; "uid" => uid);
-                    if let Some(cids) = enrolled.get(&uid) {
-                        let cid = *cids.choose(&mut rng).unwrap();
-                        let private = if rng.gen_bool(private) { 1 } else { 0 };
-                        trace!(log, "making post"; "cid" => cid, "private" => ?private);
-                        let anon = 1;
-                        let start = Instant::now();
-                        posts
-                            .insert(vec![
-                                pid.into(),
-                                cid.into(),
-                                uid.into(),
-                                format!("post #{}", pid).into(),
-                                private.into(),
-                                anon.into(),
-                            ])
-                            .unwrap();
-                        pid += 1;
-                        break start;
-                    }
-                }
-            }
-            Operation::Login => unreachable!(),
         };
         let took = begin.elapsed();
-        n += 1;
+        posts_reads += 1;
 
         if start.elapsed() < runtime / 3 {
             // warm-up
@@ -386,20 +332,95 @@ fn main() {
         }
 
         trace!(log, "recording sample"; "took" => ?took);
-        stats
-            .entry(operation)
+        cold_stats
+            .entry(Operation::ReadPosts)
             .or_insert_with(|| Histogram::<u64>::new_with_bounds(10, 1_000_000, 4).unwrap())
             .saturating_record(took.as_micros() as u64);
-
-        if let Some(ref iloc) = iloc {
-            if n % 1000 == 0 {
-                std::fs::copy("/proc/self/status", iloc.join(format!("op-{}.status", n)))
-                    .expect("failed to extract process info");
-            }
-        }
     }
 
-    println!("# setup time: {:?}", setup);
+    debug!(log, "cold reads of post count");
+    let mut post_count_reads = 0;
+    let start = Instant::now();
+    while start.elapsed() < runtime {
+        trace!(log, "reading post count");
+        // TODO: maybe only select from eligible users?
+        let begin = loop {
+            let uid = 1 + rng.gen_range(0, nlogged);
+            trace!(log, "trying user"; "uid" => uid);
+            if let Some(cids) = enrolled.get(&uid) {
+                let cid = *cids.choose(&mut rng).unwrap();
+                trace!(log, "chose class"; "cid" => cid);
+                requests.push((Operation::ReadPostCount, uid, cid));
+                let start = Instant::now();
+                post_count_view[uid - 1]
+                    .lookup(&[cid.into()], true)
+                    .unwrap();
+                break start;
+            }
+        };
+        let took = begin.elapsed();
+        post_count_reads += 1;
+
+        if start.elapsed() < runtime / 3 {
+            // warm-up
+            trace!(log, "dropping sample during warm-up"; "at" => ?start.elapsed(), "took" => ?took);
+            continue;
+        }
+
+        trace!(log, "recording sample"; "took" => ?took);
+        cold_stats
+            .entry(Operation::ReadPostCount)
+            .or_insert_with(|| Histogram::<u64>::new_with_bounds(10, 1_000_000, 4).unwrap())
+            .saturating_record(took.as_micros() as u64);
+    }
+
+    info!(log, "starting warm read benchmarks");
+    for (op, uid, cid) in requests {
+        match op {
+            Operation::ReadPosts => {
+                trace!(log, "reading posts"; "uid" => uid, "cid" => cid);
+            }
+            Operation::ReadPostCount => {
+                trace!(log, "reading post count"; "uid" => uid, "cid" => cid);
+            }
+            _ => unreachable!(),
+        }
+
+        // TODO: maybe only select from eligible users?
+        let begin = Instant::now();
+        match op {
+            Operation::ReadPosts => {
+                posts_view[uid - 1].lookup(&[cid.into()], true).unwrap();
+            }
+            Operation::ReadPostCount => {
+                post_count_view[uid - 1]
+                    .lookup(&[cid.into()], true)
+                    .unwrap();
+            }
+            _ => unreachable!(),
+        }
+        let took = begin.elapsed();
+
+        // NOTE: no warm-up for "warm" reads
+
+        trace!(log, "recording sample"; "took" => ?took);
+        warm_stats
+            .entry(op)
+            .or_insert_with(|| Histogram::<u64>::new_with_bounds(10, 1_000_000, 4).unwrap())
+            .saturating_record(took.as_micros() as u64);
+    }
+
+    info!(log, "performing reads for space overhead measurement");
+    // have every user read every class so that we can measure total space overhead
+    for (&uid, cids) in &enrolled {
+        for cids in cids.chunks(10) {
+            let cids: Vec<_> = cids.iter().map(|&cid| vec![cid.into()]).collect();
+            posts_view[uid - 1]
+                .multi_lookup(cids.clone(), true)
+                .unwrap();
+            post_count_view[uid - 1].multi_lookup(cids, true).unwrap();
+        }
+    }
 
     if let Ok(mem) = std::fs::read_to_string("/proc/self/statm") {
         let vmrss = mem.split_whitespace().nth(2 - 1).unwrap();
@@ -408,28 +429,88 @@ fn main() {
         println!("# VmData: {} ", data);
     }
 
+    info!(log, "performing write measurements");
+    let mut pid = nposts + 1;
+    let mut post_writes = 0;
+    let start = Instant::now();
+    while start.elapsed() < runtime {
+        trace!(log, "writing post");
+        let mut writes = Vec::new();
+        while writes.len() < WRITE_CHUNK_SIZE {
+            let uid = 1 + rng.gen_range(0, nlogged);
+            trace!(log, "trying user"; "uid" => uid);
+            if let Some(cids) = enrolled.get(&uid) {
+                let cid = *cids.choose(&mut rng).unwrap();
+                let private = if rng.gen_bool(private) { 1 } else { 0 };
+                trace!(log, "making post"; "cid" => cid, "private" => ?private);
+                let anon = 1;
+                writes.push(vec![
+                    pid.into(),
+                    cid.into(),
+                    uid.into(),
+                    format!("post #{}", pid).into(),
+                    private.into(),
+                    anon.into(),
+                ]);
+                pid += 1;
+            }
+        }
+
+        let begin = Instant::now();
+        posts.perform_all(writes).unwrap();
+        let took = begin.elapsed();
+        post_writes += 1;
+
+        if start.elapsed() < runtime / 3 {
+            // warm-up
+            trace!(log, "dropping sample during warm-up"; "at" => ?start.elapsed(), "took" => ?took);
+            continue;
+        }
+
+        trace!(log, "recording sample"; "took" => ?took);
+        cold_stats
+            .entry(Operation::WritePost)
+            .or_insert_with(|| Histogram::<u64>::new_with_bounds(10, 1_000_000, 4).unwrap())
+            .saturating_record((took.as_micros() / WRITE_CHUNK_SIZE as u128) as u64);
+    }
+
+    // TODO: do we also want to measure writes when we _haven't_ read all the keys?
+
     let mut i = 0;
     let stripe = login_times.len() / (runtime.as_secs() as usize);
     while i < login_times.len() {
         println!("# login sample[{}]: {:?}", i, login_times[i]);
         i += stripe;
     }
-    println!("# number of operations: {}", n);
-    println!("#\top\tpct\ttime");
+    println!("# number of cold posts reads: {}", posts_reads);
+    println!("# number of cold post count reads: {}", post_count_reads);
+    println!(
+        "# number of post writes: {}",
+        post_writes * WRITE_CHUNK_SIZE
+    );
+    println!("# op\tphase\tpct\ttime");
     for &q in &[50, 95, 99, 100] {
-        let mut keys: Vec<_> = stats.keys().collect();
-        keys.sort();
-        for op in keys {
-            let stats = &stats[op];
-            if q == 100 {
-                println!("{}\t100\t{:.2}\tµs", op, stats.max());
-            } else {
-                println!(
-                    "{}\t{}\t{:.2}\tµs",
-                    op,
-                    q,
-                    stats.value_at_quantile(q as f64 / 100.0)
-                );
+        for &heat in &["cold", "warm"] {
+            let stats = match heat {
+                "cold" => &cold_stats,
+                "warm" => &warm_stats,
+                _ => unreachable!(),
+            };
+            let mut keys: Vec<_> = stats.keys().collect();
+            keys.sort();
+            for op in keys {
+                let stats = &stats[op];
+                if q == 100 {
+                    println!("{}\t{}\t100\t{:.2}\tµs", op, heat, stats.max());
+                } else {
+                    println!(
+                        "{}\t{}\t{}\t{:.2}\tµs",
+                        op,
+                        heat,
+                        q,
+                        stats.value_at_quantile(q as f64 / 100.0)
+                    );
+                }
             }
         }
     }
