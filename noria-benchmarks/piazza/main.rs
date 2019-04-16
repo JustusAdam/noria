@@ -480,7 +480,15 @@ fn main() {
     let stripe = login_times.len() / (runtime.as_secs() as usize);
     while i < login_times.len() {
         println!("# login sample[{}]: {:?}", i, login_times[i]);
-        i += stripe;
+        if i == 0 {
+            // we want to include both 0 and 1
+            i += 1;
+        } else if i == 1 {
+            // and then go back to every stripe'th sample
+            i = stripe;
+        } else {
+            i += stripe;
+        }
     }
     println!("# number of cold posts reads: {}", posts_reads);
     println!("# number of cold post count reads: {}", post_count_reads);
