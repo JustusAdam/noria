@@ -429,6 +429,22 @@ fn main() {
         println!("# VmData: {} ", data);
     }
 
+    debug!(log, "extracing materialization memory stats");
+    let mut base_mem = 0;
+    let mut mem = 0;
+    let stats = g.statistics().unwrap();
+    for (_, nstats) in stats.values() {
+        for nstat in nstats.values() {
+            if nstat.desc == "B" {
+                base_mem += nstat.mem_size;
+            } else {
+                mem += nstat.mem_size;
+            }
+        }
+    }
+    println!("# base memory: {}", base_mem);
+    println!("# materialization memory: {}", mem);
+
     info!(log, "performing write measurements");
     let mut pid = nposts + 1;
     let mut post_writes = 0;
