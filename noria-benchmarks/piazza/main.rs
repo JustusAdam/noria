@@ -414,13 +414,12 @@ fn main() {
     debug!(log, "performing reads to fill materializations");
     // have every user read every class so that we can measure total space overhead
     for (&uid, cids) in &enrolled {
-        for cids in cids.chunks(10) {
-            let cids: Vec<_> = cids.iter().map(|&cid| vec![cid.into()]).collect();
-            posts_view[uid - 1]
-                .multi_lookup(cids.clone(), true)
-                .unwrap();
-            post_count_view[uid - 1].multi_lookup(cids, true).unwrap();
-        }
+        trace!(log, "reading all classes for user"; "uid" => uid, "classes" => ?cids);
+        let cids: Vec<_> = cids.iter().map(|&cid| vec![cid.into()]).collect();
+        posts_view[uid - 1]
+            .multi_lookup(cids.clone(), true)
+            .unwrap();
+        post_count_view[uid - 1].multi_lookup(cids, true).unwrap();
     }
 
     if let Ok(mem) = std::fs::read_to_string("/proc/self/statm") {
