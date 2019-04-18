@@ -14,6 +14,7 @@ pub mod rewrite;
 pub mod topk;
 pub mod trigger;
 pub mod union;
+pub mod ohua_test_op;
 
 #[derive(Clone, Serialize, Deserialize)]
 #[allow(clippy::large_enum_variant)]
@@ -31,6 +32,7 @@ pub enum NodeOperator {
     Trigger(trigger::Trigger),
     Rewrite(rewrite::Rewrite),
     Distinct(distinct::Distinct),
+    OhuaTestOp(ohua_test_op::OhuaTestOp),
 }
 
 macro_rules! nodeop_from_impl {
@@ -65,6 +67,7 @@ nodeop_from_impl!(NodeOperator::TopK, topk::TopK);
 nodeop_from_impl!(NodeOperator::Trigger, trigger::Trigger);
 nodeop_from_impl!(NodeOperator::Rewrite, rewrite::Rewrite);
 nodeop_from_impl!(NodeOperator::Distinct, distinct::Distinct);
+nodeop_from_impl!(NodeOperator::OhuaTestOp, ohua_test_op::OhuaTestOp);
 
 macro_rules! impl_ingredient_fn_mut {
     ($self:ident, $fn:ident, $( $arg:ident ),* ) => {
@@ -82,6 +85,7 @@ macro_rules! impl_ingredient_fn_mut {
             NodeOperator::Trigger(ref mut i) => i.$fn($($arg),*),
             NodeOperator::Rewrite(ref mut i) => i.$fn($($arg),*),
             NodeOperator::Distinct(ref mut i) => i.$fn($($arg),*),
+            NodeOperator::OhuaTestOp(ref mut i) => i.$fn($($arg),*),
         }
     }
 }
@@ -102,6 +106,7 @@ macro_rules! impl_ingredient_fn_ref {
             NodeOperator::Trigger(ref i) => i.$fn($($arg),*),
             NodeOperator::Rewrite(ref i) => i.$fn($($arg),*),
             NodeOperator::Distinct(ref i) => i.$fn($($arg),*),
+            NodeOperator::OhuaTestOp(ref i) => i.$fn($($arg),*),
         }
     }
 }

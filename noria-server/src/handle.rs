@@ -264,4 +264,14 @@ mod tests {
             let _ = c.table("a").unwrap();
         }
     }
+
+    #[test]
+    fn very_simple_ohua_integration() {
+        use crate::Builder;
+        let mut b = Builder::default().start_simple().unwrap();
+        b.install_recipe("CREATE TABLE a (x int);").unwrap();
+        b.extend_recipe("test: SELECT ohua_udf(x) FROM a;").unwrap();
+
+        b.view("test").unwrap();
+    }
 }

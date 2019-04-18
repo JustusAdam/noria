@@ -16,6 +16,7 @@ fn target_columns_from_computed_column(computed_col: &nom_sql::Column) -> Column
         | Max(ref col)
         | Min(ref col)
         | Sum(ref col, _) => Column::from(col),
+        UDF(_,_) => panic!("I did not expect to find this here!"),
         CountStar => {
             // see comment re COUNT(*) rewriting in make_aggregation_node
             panic!("COUNT(*) should have been rewritten earlier!")
@@ -47,6 +48,7 @@ pub(super) fn make_predicates_above_grouped<'a>(
                 if column_to_predicates.contains_key(&over_col) {
                     let parent = match *prev_node {
                         Some(ref p) => p.clone(),
+
                         None => node_for_rel[over_table].clone(),
                     };
 

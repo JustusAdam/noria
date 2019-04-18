@@ -16,3 +16,4 @@ tower-balance = { git = "https://github.com/tower-rs/tower.git" }
 tower-buffer = { git = "https://github.com/tower-rs/tower.git" }
 tower-util = { git = "https://github.com/tower-rs/tower.git" }
 tower = { git = "https://github.com/tower-rs/tower.git" }
+nom-sql = { path = "../nom-sql" }
