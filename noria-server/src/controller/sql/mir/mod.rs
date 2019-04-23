@@ -9,6 +9,7 @@ use dataflow::ops::join::JoinType;
 
 use crate::controller::sql::query_graph::{OutputColumn, QueryGraph};
 use crate::controller::sql::query_signature::Signature;
+use crate::controller::sql::udf;
 use nom_sql::{
     ArithmeticExpression, ColumnSpecification, CompoundSelectOperator, ConditionBase,
     ConditionExpression, ConditionTree, Literal, Operator, SqlQuery, TableKey,
@@ -93,6 +94,7 @@ fn value_columns_needed_for_predicates(
         .filter(|(c, _)| pred_columns.contains(c))
         .collect()
 }
+
 
 #[derive(Clone, Debug)]
 pub(super) struct SqlToMirConverter {
@@ -485,6 +487,7 @@ impl SqlToMirConverter {
         ),
         String,
     > {
+        println!("Query graph at {}:{}\n{:?}", file!(), line!(),qg);
         let (sec, nodes, table_mapping, base_name) =
             self.make_nodes_for_selection(&name, sq, qg, has_leaf, universe)?;
         let mut roots = Vec::new();
@@ -1005,6 +1008,10 @@ impl SqlToMirConverter {
                 GroupedNodeType::GroupConcat(separator.clone()),
                 false,
             ),
+            UDF(ref fun, _) => {
+                assert!(udf::is_grouped_function(fun), "Non-grouped UDF's should have been rewritten earlier!");
+                unimplemented!();
+            },
             _ => unimplemented!(),
         }
     }

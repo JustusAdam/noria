@@ -5,6 +5,7 @@ mod query_signature;
 mod query_utils;
 mod reuse;
 pub(super) mod security;
+mod udf;
 
 use self::mir::SqlToMirConverter;
 use self::query_graph::{to_query_graph, QueryGraph};

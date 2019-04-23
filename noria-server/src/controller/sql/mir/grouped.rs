@@ -16,7 +16,12 @@ fn target_columns_from_computed_column(computed_col: &nom_sql::Column) -> Column
         | Max(ref col)
         | Min(ref col)
         | Sum(ref col, _) => Column::from(col),
-        UDF(_,_) => panic!("I did not expect to find this here!"),
+        UDF(_,ref cols) => {
+            // TODO(justus) I think udf's should be able to work on multiple
+            // columns, therefore this must be able to return multiple column
+            assert!(cols.len() == 1);
+            Column::from(&cols[0])
+        },
         CountStar => {
             // see comment re COUNT(*) rewriting in make_aggregation_node
             panic!("COUNT(*) should have been rewritten earlier!")
@@ -43,7 +48,10 @@ pub(super) fn make_predicates_above_grouped<'a>(
         Some(computed_cols_cgn) => {
             for ccol in &computed_cols_cgn.columns {
                 let over_col = target_columns_from_computed_column(ccol);
-                let over_table = over_col.table.as_ref().unwrap().as_str();
+                let over_table = match over_col.table {
+                    Some(ref t) => t.as_str(),
+                    None => panic!("The value '{:?}' has no table", over_col)
+                };
 
                 if column_to_predicates.contains_key(&over_col) {
                     let parent = match *prev_node {

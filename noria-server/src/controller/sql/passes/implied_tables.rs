@@ -149,6 +149,14 @@ fn rewrite_selection(
                                     fe.table = find_table(fe, tables_in_query);
                                 }
                             }
+                            // TODO make this work with UDF's taking multiple tables
+                            UDF(_, ref mut fes) => {
+                                assert!(fes.len() == 1);
+                                let ref mut fe = fes[0];
+                                if fe.table.is_none() {
+                                    fe.table = find_table(fe, tables_in_query);
+                                }
+                            }
                             _ => {}
                         }
                         None
