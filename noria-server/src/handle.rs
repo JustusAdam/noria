@@ -247,30 +247,6 @@ impl<A: Authority + 'static> Drop for SyncHandle<A> {
         }
     }
 }
-  //  7: noria_server::controller::sql::mir::grouped::make_predicates_above_grouped
-  //            at noria-server/src/controller/sql/mir/grouped.rs:53
-  //  8: noria_server::controller::sql::mir::SqlToMirConverter::make_nodes_for_selection
-  //            at noria-server/src/controller/sql/mir/mod.rs:1556
-  //  9: noria_server::controller::sql::mir::SqlToMirConverter::named_query_to_mir
-  //            at noria-server/src/controller/sql/mir/mod.rs:491
-  // 10: noria_server::controller::sql::SqlIncorporator::add_query_via_mir
-  //            at noria-server/src/controller/sql/mod.rs:526
-  // 11: noria_server::controller::sql::SqlIncorporator::add_select_query
-  //            at noria-server/src/controller/sql/mod.rs:508
-  // 12: noria_server::controller::sql::SqlIncorporator::nodes_for_named_query
-  //            at noria-server/src/controller/sql/mod.rs:896
-  // 13: noria_server::controller::sql::SqlIncorporator::add_parsed_query
-  //            at noria-server/src/controller/sql/mod.rs:151
-  // 14: noria_server::controller::recipe::Recipe::activate
-  //            at noria-server/src/controller/recipe/mod.rs:430
-  // 15: noria_server::controller::inner::ControllerInner::apply_recipe::{{closure}}
-  //            at noria-server/src/controller/inner.rs:1011
-  // 16: noria_server::controller::inner::ControllerInner::migrate
-  //            at noria-server/src/controller/inner.rs:690
-  // 17: noria_server::controller::inner::ControllerInner::apply_recipe
-  //            at noria-server/src/controller/inner.rs:1010
-  // 18: noria_server::controller::inner::ControllerInner::extend_recipe
-  //            at noria-server/src/controller/inner.rs:1079
 
 #[cfg(test)]
 mod tests {
@@ -295,7 +271,13 @@ mod tests {
         use crate::Builder;
         let mut b = Builder::default().start_simple().unwrap();
         b.install_recipe("CREATE TABLE a (x int);").unwrap();
-        b.extend_recipe("test: SELECT ohua_udf(x), max(x) FROM a;").unwrap();
+        b.extend_recipe("VIEW test: SELECT test_count(x), max(x) FROM a;").unwrap();
+
+        use std::io::Write;
+        use std::dbg;
+
+        // let mut f_1 = dbg!(std::fs::File::create("noria-test-graph.gr").unwrap());
+        // write!(f_1, "{}", b.graphviz().unwrap()).unwrap();
 
         b.view("test").unwrap();
     }

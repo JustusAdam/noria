@@ -18,6 +18,7 @@ pub enum GroupedNodeType {
     Aggregation(ops::grouped::aggregate::Aggregation),
     Extremum(ops::grouped::extremum::Extremum),
     GroupConcat(String),
+    UDF(String),
 }
 
 pub struct MirNode {
@@ -465,6 +466,13 @@ pub enum MirNodeType {
         column: String,
         key: String,
     },
+    /// An "arbitrary" Rust or Ohua function to call
+    UDF {
+        function_name: String,
+        //Do I need this?
+        input: Column,
+        group_by: Vec<Column>,
+    },
 }
 
 impl MirNodeType {
@@ -542,6 +550,7 @@ impl MirNodeType {
             }
         }
 
+        // TODO(justus) Evaluate if I can insert UDF's here too
         match *self {
             MirNodeType::Aggregation {
                 on: ref our_on,
@@ -969,6 +978,8 @@ impl Debug for MirNodeType {
                 write!(f, "{}", cols)
             }
             MirNodeType::Rewrite { ref column, .. } => write!(f, "Rw [{}]", column),
+            MirNodeType::UDF { ref function_name, ref input, .. } =>
+                write!(f, "udf:{}({:?})", function_name, input),
         }
     }
 }

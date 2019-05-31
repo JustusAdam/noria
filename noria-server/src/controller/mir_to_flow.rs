@@ -9,6 +9,7 @@ use dataflow::ops::filter::FilterCondition;
 use dataflow::ops::join::{Join, JoinType};
 use dataflow::ops::latest::Latest;
 use dataflow::ops::project::{Project, ProjectExpression, ProjectExpressionBase};
+use dataflow::ops::ohua_test_op;
 use dataflow::{node, ops};
 use mir::node::{GroupedNodeType, MirNode, MirNodeType};
 use mir::query::{MirQuery, QueryFlowParts};
@@ -95,6 +96,21 @@ fn mir_node_to_flow_parts(
                         on,
                         group_by,
                         GroupedNodeType::Aggregation(kind.clone()),
+                        mig,
+                        table_mapping,
+                    )
+                }
+                MirNodeType::UDF { ref function_name, ref input, ref group_by } => {
+
+                    assert_eq!(mir_node.ancestors.len(), 1);
+                    let parent = mir_node.ancestors[0].clone();
+                    make_grouped_node(
+                        &name,
+                        parent,
+                        mir_node.columns.as_slice(),
+                        input,
+                        group_by,
+                        GroupedNodeType::UDF(function_name.clone()),
                         mig,
                         table_mapping,
                     )
@@ -549,6 +565,13 @@ fn make_grouped_node(
             use dataflow::ops::grouped::concat::{GroupConcat, TextComponent};
             let gc = GroupConcat::new(parent_na, vec![TextComponent::Column(over_col_indx)], sep);
             mig.add_ingredient(String::from(name), column_names.as_slice(), gc)
+        }
+        GroupedNodeType::UDF(func) => {
+            mig.add_ingredient(
+                String::from(name),
+                column_names.as_slice(),
+                ohua_test_op::grouped_function_from_string(parent_na.into(), func),
+            )
         }
     };
     FlowNode::New(na)

@@ -1008,10 +1008,18 @@ impl SqlToMirConverter {
                 GroupedNodeType::GroupConcat(separator.clone()),
                 false,
             ),
-            UDF(ref fun, _) => {
-                assert!(udf::is_grouped_function(fun), "Non-grouped UDF's should have been rewritten earlier!");
-                unimplemented!();
-            },
+            UDF(ref fun, ref cols) => {
+                assert!(
+                    udf::is_grouped_function(fun),
+                    "Non-grouped UDF's should have been rewritten earlier!"
+                );
+                assert!(cols.len() == 1, "Multiple inputs aren't yet implemented");
+                mknode(
+                    &Column::from(&cols[0]),
+                    GroupedNodeType::UDF(fun.to_string()),
+                    false,
+                )
+            }
             _ => unimplemented!(),
         }
     }
@@ -1037,43 +1045,39 @@ impl SqlToMirConverter {
             .collect::<Vec<Column>>();
         combined_columns.push(computed_col.clone());
 
+        let mknode = |node_type| {
+            MirNode::new(
+                name,
+                self.schema_version,
+                combined_columns,
+                node_type,
+                vec![parent_node.clone()],
+                vec![],
+            )
+        };
+        let mk_group_by = || group_by.into_iter().cloned().collect();
+
         // make the new operator
         match node_type {
-            GroupedNodeType::Aggregation(agg) => MirNode::new(
-                name,
-                self.schema_version,
-                combined_columns,
-                MirNodeType::Aggregation {
-                    on: over_col.clone(),
-                    group_by: group_by.into_iter().cloned().collect(),
-                    kind: agg,
-                },
-                vec![parent_node.clone()],
-                vec![],
-            ),
-            GroupedNodeType::Extremum(extr) => MirNode::new(
-                name,
-                self.schema_version,
-                combined_columns,
-                MirNodeType::Extremum {
-                    on: over_col.clone(),
-                    group_by: group_by.into_iter().cloned().collect(),
-                    kind: extr,
-                },
-                vec![parent_node.clone()],
-                vec![],
-            ),
-            GroupedNodeType::GroupConcat(sep) => MirNode::new(
-                name,
-                self.schema_version,
-                combined_columns,
-                MirNodeType::GroupConcat {
-                    on: over_col.clone(),
-                    separator: sep,
-                },
-                vec![parent_node.clone()],
-                vec![],
-            ),
+            GroupedNodeType::Aggregation(agg) => mknode(MirNodeType::Aggregation {
+                on: over_col.clone(),
+                group_by: mk_group_by(),
+                kind: agg,
+            }),
+            GroupedNodeType::Extremum(extr) => mknode(MirNodeType::Extremum {
+                on: over_col.clone(),
+                group_by: mk_group_by(),
+                kind: extr,
+            }),
+            GroupedNodeType::GroupConcat(sep) => mknode(MirNodeType::GroupConcat {
+                on: over_col.clone(),
+                separator: sep,
+            }),
+            GroupedNodeType::UDF(fun) => mknode(MirNodeType::UDF {
+                function_name: fun,
+                group_by: mk_group_by(),
+                input: over_col.clone(),
+            }),
         }
     }
 
