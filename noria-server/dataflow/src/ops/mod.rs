@@ -33,7 +33,8 @@ pub enum NodeOperator {
     Rewrite(rewrite::Rewrite),
     Distinct(distinct::Distinct),
     OhuaTestOp(ohua_test_op::OhuaTestOp),
-    GroupingUDF(ohua_test_op::GroupingUDFOp)
+    GroupingUDF(grouped::GroupedOperator<ohua_test_op::GroupedUDF<ohua_test_op::TestCount>>),
+    OldGroupingUDF(ohua_test_op::GroupingUDFOp),
 }
 
 macro_rules! nodeop_from_impl {
@@ -45,6 +46,7 @@ macro_rules! nodeop_from_impl {
         }
     };
 }
+
 
 nodeop_from_impl!(
     NodeOperator::Sum,
@@ -69,7 +71,8 @@ nodeop_from_impl!(NodeOperator::Trigger, trigger::Trigger);
 nodeop_from_impl!(NodeOperator::Rewrite, rewrite::Rewrite);
 nodeop_from_impl!(NodeOperator::Distinct, distinct::Distinct);
 nodeop_from_impl!(NodeOperator::OhuaTestOp, ohua_test_op::OhuaTestOp);
-nodeop_from_impl!(NodeOperator::GroupingUDF, ohua_test_op::GroupingUDFOp);
+nodeop_from_impl!(NodeOperator::OldGroupingUDF, ohua_test_op::GroupingUDFOp);
+nodeop_from_impl!(NodeOperator::GroupingUDF, grouped::GroupedOperator<ohua_test_op::GroupedUDF<ohua_test_op::TestCount>>);
 
 macro_rules! impl_ingredient_fn_mut {
     ($self:ident, $fn:ident, $( $arg:ident ),* ) => {
@@ -89,6 +92,7 @@ macro_rules! impl_ingredient_fn_mut {
             NodeOperator::Distinct(ref mut i) => i.$fn($($arg),*),
             NodeOperator::OhuaTestOp(ref mut i) => i.$fn($($arg),*),
             NodeOperator::GroupingUDF(ref mut i) => i.$fn($($arg),*),
+            NodeOperator::OldGroupingUDF(ref mut i) => i.$fn($($arg),*),
         }
     }
 }
@@ -111,6 +115,7 @@ macro_rules! impl_ingredient_fn_ref {
             NodeOperator::Distinct(ref i) => i.$fn($($arg),*),
             NodeOperator::OhuaTestOp(ref i) => i.$fn($($arg),*),
             NodeOperator::GroupingUDF(ref i) => i.$fn($($arg),*),
+            NodeOperator::OldGroupingUDF(ref i) => i.$fn($($arg),*),
         }
     }
 }

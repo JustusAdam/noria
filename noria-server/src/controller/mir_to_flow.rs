@@ -570,7 +570,7 @@ fn make_grouped_node(
             mig.add_ingredient(
                 String::from(name),
                 column_names.as_slice(),
-                ohua_test_op::grouped_function_from_string(parent_na.into(), func),
+                ohua_test_op::new_grouped_function_from_string(parent_na, over_col_indx, func, group_col_indx),
             )
         }
     };
