@@ -4,6 +4,8 @@ use dataflow::ops;
 use dataflow::prelude::*;
 use nom_sql::{Column, ColumnSpecification, SqlType};
 
+use dataflow::ops::ohua_test_op::{Typed};
+
 use slog;
 
 type Path = std::vec::Vec<(
@@ -68,6 +70,9 @@ fn type_for_internal_column(
             column_schema(graph, next_node_on_path, recipe, over_columns[0], log)
                 .map(|cs| cs.sql_type)
         }
+        ops::NodeOperator::GroupingUDF(ref go) => {
+            Some(go.inner.typ())
+        }
         ops::NodeOperator::Concat(_) => {
             // group_concat always outputs a string as the last column
             if column_index == node.fields().len() - 1 {
@@ -83,6 +88,8 @@ fn type_for_internal_column(
             // ancestors; so keep iterating to try the other paths
             None
         }
+        ops::NodeOperator::OldGroupingUDF(_) | ops::NodeOperator::OhuaTestOp(_) =>
+            unimplemented!(),
         // no other operators should every generate columns
         _ => unreachable!(),
     }

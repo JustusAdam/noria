@@ -2,6 +2,7 @@ use super::grouped::{ GroupedOperation, GroupedOperator };
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
+use nom_sql::SqlType;
 
 use prelude::*;
 
@@ -80,6 +81,25 @@ pub struct GroupedUDF<F> {
     over: usize,
     group: Vec<usize>,
     initial: F,
+}
+
+pub trait Typed {
+    type Type;
+    fn typ(&self) -> Self::Type;
+}
+
+impl Typed for TestCount {
+    type Type = SqlType;
+    fn typ(&self) -> Self::Type {
+        SqlType::Bigint(64)
+    }
+}
+
+impl <F : Typed> Typed for GroupedUDF<F> {
+    type Type = F::Type;
+    fn typ(&self) -> Self::Type {
+        self.initial.typ()
+    }
 }
 
 enum DiffSum {

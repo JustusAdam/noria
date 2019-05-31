@@ -65,7 +65,7 @@ pub trait GroupedOperation: fmt::Debug + Clone {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GroupedOperator<T: GroupedOperation> {
     src: IndexPair,
-    inner: T,
+    pub inner: T,
 
     // some cache state
     us: Option<IndexPair>,
