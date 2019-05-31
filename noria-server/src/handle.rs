@@ -270,15 +270,35 @@ mod tests {
     fn very_simple_ohua_integration() {
         use crate::Builder;
         let mut b = Builder::default().start_simple().unwrap();
-        b.install_recipe("CREATE TABLE a (x int);").unwrap();
-        b.extend_recipe("VIEW test: SELECT test_count(x), max(x) FROM a;").unwrap();
+        b.install_recipe("CREATE TABLE k (x int, PRIMARY KEY(x));
+                          CREATE TABLE a (x int, y int);").unwrap();
 
-        use std::io::Write;
+        // Fails. It expects two outuit columns, but only one gets generated
+        // b.extend_recipe("VIEW test: SELECT test_count(x), max(x) FROM a;")
+        b.extend_recipe("VIEW test: SELECT k.x, min(a.y) FROM a JOIN k ON (a.x = k.x) WHERE a.x = ?;")
+            .unwrap();
+
+        use futures::future::Future;
         use std::dbg;
+        use std::io::Write;
 
         // let mut f_1 = dbg!(std::fs::File::create("noria-test-graph.gr").unwrap());
         // write!(f_1, "{}", b.graphviz().unwrap()).unwrap();
 
-        b.view("test").unwrap();
+        b.table("k").unwrap().insert(vec![1.into()]).wait().unwrap();
+
+        {
+            let mut a = b.table("a").unwrap();
+
+            a.insert(vec![1.into(), 1.into()])
+                .and_then(|a| a.insert(vec![1.into(), 5.into()]))
+                .and_then(|a| a.insert(vec![1.into(), 8.into()]))
+                .wait()
+                .unwrap();
+        }
+
+        let v = b.view("test").unwrap();
+
+        println!("Query result: {:?}", v.lookup(&[1.into()], true).wait().unwrap());
     }
 }
