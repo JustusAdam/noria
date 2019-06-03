@@ -26,7 +26,24 @@ impl KeyedState {
             (&KeyedState::Quad(ref m), &KeyType::Quad(ref k)) => m.get(k),
             (&KeyedState::Quin(ref m), &KeyType::Quin(ref k)) => m.get(k),
             (&KeyedState::Sex(ref m), &KeyType::Sex(ref k)) => m.get(k),
-            _ => unreachable!(),
+            (st, kt) => panic!("Stat: {}, key: {}",
+                               match *st {
+                                   KeyedState::Single(_) => 1,
+                                   KeyedState::Double(_) => 2,
+                                   KeyedState::Tri(_) => 3,
+                                   KeyedState::Quad(_) => 4,
+                                   KeyedState::Quin(_) => 5,
+                                   KeyedState::Sex(_) => 6,
+                               },
+                               match *kt {
+                                   KeyType::Single(_) => 1,
+                                   KeyType::Double(_) => 2,
+                                   KeyType::Tri(_) => 3,
+                                   KeyType::Quad(_) => 4,
+                                   KeyType::Quin(_) => 5,
+                                   KeyType::Sex(_) => 6,
+                               }
+            ),
         }
     }
 

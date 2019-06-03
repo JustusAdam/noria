@@ -273,9 +273,13 @@ mod tests {
         b.install_recipe("CREATE TABLE k (x int, PRIMARY KEY(x));
                           CREATE TABLE a (x int, y int);").unwrap();
 
-        // Fails. It expects two outuit columns, but only one gets generated
+        // Fails. It expects two output columns, but only one gets generated
         // b.extend_recipe("VIEW test: SELECT test_count(x), max(x) FROM a;")
-        b.extend_recipe("VIEW test: SELECT k.x, min(a.y) FROM a JOIN k ON (a.x = k.x) WHERE a.x = ?;")
+        // When I use "VIEW test: SELECT k.x, min(a.y)" I get an error in keyed_state.rs
+        // where the state is `Double`, but the lookup key is `Single`.
+        b.extend_recipe("VIEW test: SELECT count(a.y)
+                                    FROM a JOIN k ON (a.x = k.x)
+                                    WHERE k.x = ?;")
             .unwrap();
 
         use futures::future::Future;
@@ -288,17 +292,18 @@ mod tests {
         b.table("k").unwrap().insert(vec![1.into()]).wait().unwrap();
 
         {
-            let mut a = b.table("a").unwrap();
+            let a = b.table("a").unwrap();
 
-            a.insert(vec![1.into(), 1.into()])
+            let a1 = a.insert(vec![1.into(), 1.into()])
                 .and_then(|a| a.insert(vec![1.into(), 5.into()]))
                 .and_then(|a| a.insert(vec![1.into(), 8.into()]))
                 .wait()
                 .unwrap();
+            println!("Columns: {:?}", a1.columns());
         }
 
         let v = b.view("test").unwrap();
 
-        println!("Query result: {:?}", v.lookup(&[1.into()], true).wait().unwrap());
+        println!("Query result: {:?}", v.lookup(&[1.into()], true).wait().unwrap().1);
     }
 }
