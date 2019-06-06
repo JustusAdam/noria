@@ -273,13 +273,10 @@ mod tests {
         b.install_recipe("CREATE TABLE k (x int, PRIMARY KEY(x));
                           CREATE TABLE a (x int, y int);").unwrap();
 
-        // Fails. It expects two output columns, but only one gets generated
-        // b.extend_recipe("VIEW test: SELECT test_count(x), max(x) FROM a;")
-        // When I use "VIEW test: SELECT k.x, min(a.y)" I get an error in keyed_state.rs
-        // where the state is `Double`, but the lookup key is `Single`.
-        b.extend_recipe("VIEW test: SELECT count(a.y)
+        b.extend_recipe("VIEW test: SELECT k.x, test_count(a.y)
                                     FROM a JOIN k ON (a.x = k.x)
-                                    WHERE k.x = ?;")
+                                    WHERE k.x = ?
+                                    GROUP BY k.x;")
             .unwrap();
 
         use futures::future::Future;
