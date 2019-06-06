@@ -487,7 +487,7 @@ impl SqlToMirConverter {
         ),
         String,
     > {
-        println!("Query graph at {}:{}\n{:?}", file!(), line!(),qg);
+        //println!("Query graph at {}:{}\n{:?}", file!(), line!(), qg);
         let (sec, nodes, table_mapping, base_name) =
             self.make_nodes_for_selection(&name, sq, qg, has_leaf, universe)?;
         let mut roots = Vec::new();
@@ -930,6 +930,23 @@ impl SqlToMirConverter {
             vec![],
         )
     }
+
+    // /// Unused, might be necessary when I implement non-grouping UDF's
+    // fn make_udf_node(&self, name: &str, parents: &[MirNodeRef], func_name: String) -> MirNodeRef {
+    //     assert!(parents.len() == 1, "No more than one parent allowed for the time");
+
+    //     MirNode::new(
+    //         name,
+    //         self.schema_version,
+    //         parents[0].borrow().columns().to_vec(),
+    //         MirNodeType::UDF {
+    //             function_name: func_name,
+    //             inputs: parents.to_vec(),
+    //         },
+    //         parents.to_vec(),
+    //         vec![],
+    //     )
+    // }
 
     fn make_function_node(
         &self,
