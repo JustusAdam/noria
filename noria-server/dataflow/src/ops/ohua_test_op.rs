@@ -1,8 +1,8 @@
-use super::grouped::{ GroupedOperation, GroupedOperator };
+use super::grouped::{GroupedOperation, GroupedOperator};
+use nom_sql::SqlType;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
-use nom_sql::SqlType;
 
 use prelude::*;
 
@@ -76,6 +76,55 @@ impl Into<DataType> for TestCount {
     }
 }
 
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct Product(f64);
+
+impl Construct<DataType> for Product {
+    fn construct(src: &DataType) -> Self {
+        Product(src.into())
+    }
+}
+
+impl Semigroup for Product {
+    fn append(&self, other: &Self) -> Self {
+        Product(self.0 * other.0)
+    }
+}
+
+impl Monoid for Product {
+    fn empty() -> Self {
+        Product(1.0)
+    }
+}
+
+impl Group for Product {
+    fn reverse(&self) -> Self {
+        Product(match *self {
+            Product(i) if i == 0.0 => 0.0,
+            Product(i) => 1.0 / i,
+        })
+    }
+}
+
+impl Descriptive for Product {
+    fn description(detailed: bool) -> String {
+        "Π".into()
+    }
+}
+
+impl From<DataType> for Product {
+    fn from(dt: DataType) -> Self {
+        let f: f64 = (&dt).into();
+        Product(f)
+    }
+}
+
+impl Into<DataType> for Product {
+    fn into(self) -> DataType {
+        self.0.into()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GroupedUDF<F> {
     over: usize,
@@ -95,7 +144,14 @@ impl Typed for TestCount {
     }
 }
 
-impl <F : Typed> Typed for GroupedUDF<F> {
+impl Typed for Product {
+    type Type = SqlType;
+    fn typ(&self) -> Self::Type {
+        SqlType::Double
+    }
+}
+
+impl<F: Typed> Typed for GroupedUDF<F> {
     type Type = F::Type;
     fn typ(&self) -> Self::Type {
         self.initial.typ()
@@ -244,7 +300,7 @@ impl GroupingUDF for GroupingFuncType {
 
 fn grouped_function_type_from_string(name: &String) -> GroupingFuncType {
     match name.as_str() {
-        "test_count" => TestCount(0).into(),
+        "test_count" => TestCount::empty().into(),
         _ => unimplemented!(),
     }
 }
@@ -262,16 +318,26 @@ pub fn new_grouped_function_from_string(
     over_col: usize,
     name: String,
     group: Vec<usize>,
-) -> GroupedOperator<GroupedUDF<TestCount>> {
-    assert!(name == "test_count");
-    GroupedOperator::new(
-        parent,
-        GroupedUDF {
-            over: over_col,
-            group: group,
-            initial: TestCount::empty(),
-        },
-    )
+) -> NodeOperator {
+    match name.as_ref() {
+        "test_count" => GroupedOperator::new(
+            parent,
+            GroupedUDF {
+                over: over_col,
+                group: group,
+                initial: TestCount::empty(),
+            },
+        ).into(),
+        "prod" => GroupedOperator::new(
+            parent,
+            GroupedUDF {
+                over: over_col,
+                group: group,
+                initial: Product::empty(),
+            },
+        ).into(),
+        _ => panic!("Unknown grouping UDF: {}", name),
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]

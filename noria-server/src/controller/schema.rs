@@ -73,6 +73,9 @@ fn type_for_internal_column(
         ops::NodeOperator::GroupingUDF(ref go) => {
             Some(go.inner.typ())
         }
+        ops::NodeOperator::ProductUDF(ref go) => {
+            Some(go.inner.typ())
+        }
         ops::NodeOperator::Concat(_) => {
             // group_concat always outputs a string as the last column
             if column_index == node.fields().len() - 1 {

@@ -270,14 +270,19 @@ mod tests {
     fn very_simple_ohua_integration() {
         use crate::Builder;
         let mut b = Builder::default().start_simple().unwrap();
-        b.install_recipe("CREATE TABLE k (x int, PRIMARY KEY(x));
-                          CREATE TABLE a (x int, y int);").unwrap();
+        b.install_recipe(
+            "CREATE TABLE k (x int, PRIMARY KEY(x));
+             CREATE TABLE a (x int, y int, z int, PRIMARY KEY(z));",
+        )
+        .unwrap();
 
-        b.extend_recipe("VIEW test: SELECT k.x, test_count(a.y)
+        b.extend_recipe(
+            "VIEW test: SELECT k.x, test_count(a.y)
                                     FROM a JOIN k ON (a.x = k.x)
                                     WHERE k.x = ?
-                                    GROUP BY k.x;")
-            .unwrap();
+                                    GROUP BY k.x;",
+        )
+        .unwrap();
 
         use futures::future::Future;
         use std::dbg;
@@ -291,9 +296,10 @@ mod tests {
         {
             let a = b.table("a").unwrap();
 
-            let a1 = a.insert(vec![1.into(), 1.into()])
-                .and_then(|a| a.insert(vec![1.into(), 5.into()]))
-                .and_then(|a| a.insert(vec![1.into(), 8.into()]))
+            let a1 = a
+                .insert(vec![1.into(), 1.into(), 0.into()])
+                .and_then(|a| a.insert(vec![1.into(), 5.into(), 1.into()]))
+                .and_then(|a| a.insert(vec![1.into(), 8.into(), 2.into()]))
                 .wait()
                 .unwrap();
             println!("Columns: {:?}", a1.columns());
@@ -301,6 +307,56 @@ mod tests {
 
         let v = b.view("test").unwrap();
 
-        println!("Query result: {:?}", v.lookup(&[1.into()], true).wait().unwrap().1);
+        assert!(v.lookup(&[1.into()], true).wait().unwrap().1[0][1] == 14.into());
+
+        b.table("a").unwrap().delete(vec![2.into()]).wait().unwrap();
+
+        assert!(b.view("test").unwrap().lookup(&[1.into()], true).wait().unwrap().1[0][1] == 6.into());
+    }
+
+    #[test]
+    fn product_udf() {
+        use crate::Builder;
+
+        let mut b = Builder::default().start_simple().unwrap();
+
+        b.install_recipe(
+            "CREATE TABLE k (k int, PRIMARY KEY(k));
+             CREATE TABLE a (y double, x int, sk int);"//, PRIMARY KEY(sk));",
+        )
+        .unwrap();
+
+        b.table("k").unwrap().insert(vec![1.into()]).wait().unwrap();
+
+        use futures::future::Future;
+
+        b.table("a")
+            .unwrap()
+            .insert(vec![2.0.into(), 1.into(), 0.into()])
+            .and_then(|a| a.insert(vec![3.0.into(), 1.into(), 1.into()]))
+            .and_then(|a| a.insert(vec![4.0.into(), 1.into(), 2.into()]))
+            .wait()
+            .unwrap();
+
+        b.extend_recipe(
+            "VIEW test: SELECT a.x, prod(y)
+                        FROM k JOIN a ON (a.x = k.k)
+                        WHERE k.k = ?
+                        GROUP BY k.k;")
+            .unwrap();
+
+        let v = b.view("test").unwrap();
+
+        // Here the code has already failed.
+
+        let qr =
+            v.lookup(&[1.into()], true).wait().unwrap().1;
+
+        assert!(qr[0][1] == 24.0.into());
+
+        b.table("a").unwrap().delete(vec![2.into()]).wait().unwrap();
+
+        assert!(b.view("test").unwrap().lookup(&[3.into()],true).wait().unwrap().1[0][1] == 6.0.into());
+
     }
 }
