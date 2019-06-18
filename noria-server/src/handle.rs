@@ -318,31 +318,41 @@ mod tests {
     fn product_udf() {
         use crate::Builder;
 
-        let mut b = Builder::default().start_simple().unwrap();
+        let mut bld = Builder::default();
+
+        bld.log_with(crate::logger_pls());
+
+        let mut b = bld.start_simple().unwrap();
 
         b.install_recipe(
-            "CREATE TABLE k (k int, PRIMARY KEY(k));
-             CREATE TABLE a (y double, x int, sk int);"//, PRIMARY KEY(sk));",
+            //"CREATE TABLE k (k int, PRIMARY KEY(k));
+            "CREATE TABLE a (y int, x int, sk int, PRIMARY KEY(sk));",
         )
         .unwrap();
 
-        b.table("k").unwrap().insert(vec![1.into()]).wait().unwrap();
+        //b.table("k").unwrap().insert(vec![1.into()]).wait().unwrap();
 
         use futures::future::Future;
 
         b.table("a")
             .unwrap()
-            .insert(vec![2.0.into(), 1.into(), 0.into()])
-            .and_then(|a| a.insert(vec![3.0.into(), 1.into(), 1.into()]))
-            .and_then(|a| a.insert(vec![4.0.into(), 1.into(), 2.into()]))
+            .insert(vec![2.into(), 1.into(), 0.into()])
+            .and_then(|a| a.insert(vec![3.into(), 1.into(), 1.into()]))
+            .and_then(|a| a.insert(vec![4.into(), 1.into(), 2.into()]))
             .wait()
             .unwrap();
 
+        // b.extend_recipe(
+        //     "VIEW test: SELECT a.x, sum(a.y)
+        //                 FROM k JOIN a ON (a.x = k.k)
+        //                 WHERE k.k = ?
+        //                 GROUP BY k.k;")
+        //     .unwrap();
         b.extend_recipe(
-            "VIEW test: SELECT a.x, prod(y)
-                        FROM k JOIN a ON (a.x = k.k)
-                        WHERE k.k = ?
-                        GROUP BY k.k;")
+            "VIEW test: SELECT a.x, sum(a.y)
+                        FROM a
+                        WHERE a.x = ?
+                        GROUP By x;")
             .unwrap();
 
         let v = b.view("test").unwrap();

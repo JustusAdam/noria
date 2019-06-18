@@ -1,0 +1,10 @@
+* Example Grouping UDF
+
+IDEA: Variance
+
+$\mathrm{Var}(x) = \sum_{i=1}^n p_i \cdot (x_i - \mu)^2$
+
+Step 1, assume fixed $\mu$ and $p_i = \mathrm{const} = \frac{1}{n}$. Then $\mathrm{Var}(x)
+= \sum (x_i - \mu)^2$
+
+SELECT sum(prob * pow(2, x - mu)) FROM t;

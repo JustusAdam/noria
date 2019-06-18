@@ -7,6 +7,7 @@ use prelude::*;
 
 type FnvHashMap<K, V> = RaHashMap<K, V, FnvBuildHasher>;
 
+#[derive(Debug)]
 #[allow(clippy::type_complexity)]
 pub(super) enum KeyedState {
     Single(FnvHashMap<DataType, Vec<Row>>),
@@ -26,6 +27,7 @@ impl KeyedState {
             (&KeyedState::Quad(ref m), &KeyType::Quad(ref k)) => m.get(k),
             (&KeyedState::Quin(ref m), &KeyType::Quin(ref k)) => m.get(k),
             (&KeyedState::Sex(ref m), &KeyType::Sex(ref k)) => m.get(k),
+            (st, kt) => panic!("State: {:?}, key: {:?}", st, kt),
             (st, kt) => panic!("Stat: {}, key: {}",
                                match *st {
                                    KeyedState::Single(_) => 1,
