@@ -1,0 +1,108 @@
+
+(* with `letfor` syntax *)
+let query read_ribbons comments stories votes =
+    letfor ribbon <- read_ribbons in
+    letfor comment <- lookup (\c -> c#story_id == ribbon#story_id) comments in
+    letfor story <- lookup (\s -> s#id == ribbon#story_id) stories in
+
+    guard $ ribbon#is_following == 1;
+    guard $ not comment#is_deleted;
+    guard $ not comment#is_moderated;
+    guard $ comment#upvotes - comment#downvotes >= 0;
+    guard $ story#upvotes - story#downvotes >= 0;
+    let parents = lookup (\p -> p#id == parent_comment_id comment in
+    letfor (p_author_id) <-
+        if (null parents)
+        then guard (ribbon#user_id == story#user_id);
+             Nothing
+        else letfor parent_comment <- parents in
+                guard $
+                    parent#user_id == ribbon#user_id;
+                guard $
+                    parent_comment#upvotes - parent_comment#downvotes >= 0;
+                Just $ parent_comment#user_id in
+    let is_unread = ribbon#updated_at > comments#created_at in
+    letfor vote <- findOne (\v -> v#user_id == ribbon#user_id ) votes in
+    return
+        ( ribbon#user_id
+        , comment#id
+        , ribbon#story_id
+        , comment#parent_comment_id
+        , parent_comment#user_id
+        , comment#user_id
+        , story#user_id
+        , is_unread
+        , vote#vote
+        , vote#reason);;
+
+(* with `guard` *)
+let query read_ribbons comments stories votes =
+    smap (\ribbon ->
+    smap (\comment ->
+    smap (\story ->
+         guard ( ribbon#is_following == 1 );
+         guard ( not comment#is_deleted );
+         guard ( not comment#is_moderated );
+         guard ( comment#upvotes - comment#downvotes >= 0 );
+         guard ( story#upvotes - story#downvotes >= 0 );
+         let parents = lookup (\p -> p#id == parent_comment_id) comment in
+         smap (\p_author_id ->
+             let is_unread = ribbon#updated_at > comments#created_at in
+             smap (\vote
+             return
+                ( ribbon#user_id
+                , comment#id
+                , ribbon#story_id
+                , comment#parent_comment_id
+                , parent_comment#user_id
+                , comment#user_id
+                , story#user_id
+                , is_unread
+                , vote#vote
+                , vote#reason)
+                )
+                ( findOne (\v -> v#user_id == ribbon#user_id ) votes ))
+        (if (null parents)
+        then guard (ribbon#user_id == story#user_id); pure Nothing
+        else letfor parent_comment <- parents in
+                guard $
+                    parent_comment#upvotes - parent_comment#downvotes >= 0;
+                pure $ Just $ parent_comment#user_id)
+        (lookup (\s -> s#id == ribbon#story_id) stories))
+        (lookup (\c -> c#story_id == ribbon#story_id) comments))
+        ) read_ribbons);;
+
+
+let query read_ribbons comments stories votes =
+    smap (\ribbon ->
+    smap (\comment ->
+    smap (\story ->
+         let parents = lookup (\p -> p#id == parent_comment_id) comment in
+         smap (\p_author_id ->
+             let is_unread = ribbon#updated_at > comments#created_at in
+             smap (\vote ->
+             return
+                ( ribbon#user_id
+                , comment#id
+                , ribbon#story_id
+                , comment#parent_comment_id
+                , parent_comment#user_id
+                , comment#user_id
+                , story#user_id
+                , is_unread
+                , vote#vote
+                , vote#reason)
+                )
+                ( findOne (\v -> v#user_id == ribbon#user_id ) votes ))
+            (if (null parents)
+            then if (ribbon#user_id == story#user_id) then [Nothing] else []
+            else smap (\parent_comment -> pure $ Just $ parent_comment#user_id)
+                      (filter (\p -> p#user_id == r #user_id
+                                  && p#upvotes - p#downvotes >= 0) parents))
+        (lookup (\s -> s#id == ribbon#story_id
+                    && s#upvotes - s#downvotes >= 0) stories))
+        (lookup (\c -> c#story_id == ribbon#story_id
+                    && not c#is_deleted
+                    && not c#is_moderated
+                    && c#upvotes - c#downvotes >= 0) comments)))
+    (filter (\r -> r#is_following == 1) read_ribbons ));;
