@@ -14,7 +14,7 @@ pub mod rewrite;
 pub mod topk;
 pub mod trigger;
 pub mod union;
-pub mod ohua_test_op;
+pub mod ohua;
 
 #[derive(Clone, Serialize, Deserialize)]
 #[allow(clippy::large_enum_variant)]
@@ -32,11 +32,12 @@ pub enum NodeOperator {
     Trigger(trigger::Trigger),
     Rewrite(rewrite::Rewrite),
     Distinct(distinct::Distinct),
-    OhuaTestOp(ohua_test_op::OhuaTestOp),
-    GroupingUDF(grouped::GroupedOperator<ohua_test_op::GroupedUDF<ohua_test_op::TestCount>>),
-    ProductUDF(grouped::GroupedOperator<ohua_test_op::GroupedUDF<ohua_test_op::Product>>),
-    OldGroupingUDF(ohua_test_op::GroupingUDFOp),
+    OhuaTestOp(ohua::OhuaTestOp),
+    GroupingUDF(grouped::GroupedOperator<ohua::GroupedUDF<ohua::TestCount>>),
+    ProductUDF(grouped::GroupedOperator<ohua::GroupedUDF<ohua::Product>>),
+    OldGroupingUDF(ohua::GroupingUDFOp),
 }
+
 
 macro_rules! nodeop_from_impl {
     ($variant:path, $type:ty) => {
@@ -71,10 +72,10 @@ nodeop_from_impl!(NodeOperator::TopK, topk::TopK);
 nodeop_from_impl!(NodeOperator::Trigger, trigger::Trigger);
 nodeop_from_impl!(NodeOperator::Rewrite, rewrite::Rewrite);
 nodeop_from_impl!(NodeOperator::Distinct, distinct::Distinct);
-nodeop_from_impl!(NodeOperator::OhuaTestOp, ohua_test_op::OhuaTestOp);
-nodeop_from_impl!(NodeOperator::OldGroupingUDF, ohua_test_op::GroupingUDFOp);
-nodeop_from_impl!(NodeOperator::GroupingUDF, grouped::GroupedOperator<ohua_test_op::GroupedUDF<ohua_test_op::TestCount>>);
-nodeop_from_impl!(NodeOperator::ProductUDF, grouped::GroupedOperator<ohua_test_op::GroupedUDF<ohua_test_op::Product>>);
+nodeop_from_impl!(NodeOperator::OhuaTestOp, ohua::OhuaTestOp);
+nodeop_from_impl!(NodeOperator::OldGroupingUDF, ohua::GroupingUDFOp);
+nodeop_from_impl!(NodeOperator::GroupingUDF, grouped::GroupedOperator<ohua::GroupedUDF<ohua::TestCount>>);
+nodeop_from_impl!(NodeOperator::ProductUDF, grouped::GroupedOperator<ohua::GroupedUDF<ohua::Product>>);
 
 macro_rules! impl_ingredient_fn_mut {
     ($self:ident, $fn:ident, $( $arg:ident ),* ) => {

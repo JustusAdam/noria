@@ -1,5 +1,5 @@
 
-use super::grouped::{GroupedOperation, GroupedOperator};
+use super::super::grouped::{GroupedOperation, GroupedOperator};
 use nom_sql::SqlType;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -29,7 +29,7 @@ pub trait Construct<Source> {
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct TestCount(i64);
+pub struct TestCount(pub i64);
 
 impl Construct<DataType> for TestCount {
     fn construct(src: &DataType) -> Self {
@@ -77,64 +77,6 @@ impl Into<DataType> for TestCount {
         self.0.into()
     }
 }
-
-pub trait Mapper {
-    type Input;
-    type Output;
-
-
-}
-
-type MyFn = Pow<Const<i64>,Minus<Id,Const<i64>>>;
-
-pub trait Func {
-    type Input;
-    type Output;
-    fn apply(i: &Self::Input) -> Self::Output;
-}
-
-pub struct Pow<Exp,Base>(PhantomData<(Exp,Base)>);
-
-impl <Exp : Func, Base : Func> Func for Pow<Exp,Base>
-where
-    Exp::Input : Base::Input,
-    Exp::Output : i64,
-    Base::Output : i64,
-{
-    type Input = Exp::Input;
-    type Output = i64;
-
-    fn apply(i: &Self::Input) -> Self::Output {
-        pow(&Exp::apply(i), &Base::apply(i))
-    }
-}
-
-pub struct Minus<Minuend,Subtrahend>(PhantomData<(Minuend, Subtrahend)>);
-
-impl <Minuend: Func, Subtrahend: Func, T: Sub> Func for Minus<Minuend, Subtrahend>
-where
-    Minuend::Output : T,
-    Subtrahend::Output : T,
-    Minuend::Input : Subtrahend::Input
-{
-    type Input = Minuend::Input;
-    type Output = T;
-    fn apply(i: &Self::Input) -> T {
-        Minuend::apply(i) - Subtrahend::apply(i)
-    }
-}
-
-pub struct Id;
-
-impl <T : Clone> Func for Id {
-    type Input = T;
-    type Output = T;
-    fn apply(i: &T) -> T {
-        *i.clone()
-    }
-}
-
-pub struct N2
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Product(f64);
@@ -310,5 +252,33 @@ where
 
     fn over_columns(&self) -> Vec<usize> {
         vec![self.over]
+    }
+}
+
+
+pub fn new_grouped_function_from_string(
+    parent: NodeIndex,
+    over_col: usize,
+    name: String,
+    group: Vec<usize>,
+) -> NodeOperator {
+    match name.as_ref() {
+        "test_count" => GroupedOperator::new(
+            parent,
+            GroupedUDF {
+                over: over_col,
+                group: group,
+                initial: TestCount::empty(),
+            },
+        ).into(),
+        "prod" => GroupedOperator::new(
+            parent,
+            GroupedUDF {
+                over: over_col,
+                group: group,
+                initial: Product::empty(),
+            },
+        ).into(),
+        _ => panic!("Unknown grouping UDF: {}", name),
     }
 }

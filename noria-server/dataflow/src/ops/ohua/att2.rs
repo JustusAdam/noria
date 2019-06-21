@@ -1,11 +1,12 @@
 
-use super::grouped::{GroupedOperation, GroupedOperator};
+use super::super::grouped::{GroupedOperation, GroupedOperator};
 use nom_sql::SqlType;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 
 use prelude::*;
+use super::att3::TestCount;
 
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -55,7 +56,7 @@ impl GroupingUDF for GroupingFuncType {
 
 fn grouped_function_type_from_string(name: &String) -> GroupingFuncType {
     match name.as_str() {
-        "test_count" => TestCount::empty().into(),
+        "test_count" => TestCount(0).into(),
         _ => unimplemented!(),
     }
 }
@@ -68,32 +69,6 @@ pub fn grouped_function_from_string(parent: IndexPair, name: String) -> Grouping
     }
 }
 
-pub fn new_grouped_function_from_string(
-    parent: NodeIndex,
-    over_col: usize,
-    name: String,
-    group: Vec<usize>,
-) -> NodeOperator {
-    match name.as_ref() {
-        "test_count" => GroupedOperator::new(
-            parent,
-            GroupedUDF {
-                over: over_col,
-                group: group,
-                initial: TestCount::empty(),
-            },
-        ).into(),
-        "prod" => GroupedOperator::new(
-            parent,
-            GroupedUDF {
-                over: over_col,
-                group: group,
-                initial: Product::empty(),
-            },
-        ).into(),
-        _ => panic!("Unknown grouping UDF: {}", name),
-    }
-}
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct GroupingUDFOp {

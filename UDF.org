@@ -4,7 +4,52 @@ IDEA: Variance
 
 $\mathrm{Var}(x) = \sum_{i=1}^n p_i \cdot (x_i - \mu)^2$
 
-Step 1, assume fixed $\mu$ and $p_i = \mathrm{const} = \frac{1}{n}$. Then $\mathrm{Var}(x)
-= \sum (x_i - \mu)^2$
+Step 1, assume fixed $\mu$ and $p_i = \mathrm{const} = \frac{1}{n}$. Then
+$\mathrm{Var}(x) = \sum (x_i - \mu)^2$
 
 SELECT sum(prob * pow(2, x - mu)) FROM t;
+
+* Pure functions
+
+For grouping falls into the map-reduce pattern. State reduces to the value for
+the aggregator.
+
+We only need the aggregator to be a group.
+
+Grouping UDF's, I think, have the structure:
+
+~h(concat(map(g, input)))~
+
+Where ~h~ maps the result of the grouping, ~g~ maps the input patterns and
+~concat~ uses the semigroup to combine the results.
+
+If this structure is assumed we can replay easily by using ~h(agg + (- g(v)))~
+with ~agg~ being the current (internal) aggregator value and ~v~ being the value
+we want to reverse.
+
+Reducing to a pure function means we have no interaction across boundaries of
+values and do not need to replay other keys.
+
+* Deliberations
+
+fn click_ana(start_cat: Category,
+end_cat: Category,
+clicks: &mut Vec<(UID, Category, Time)>) -> i32 {
+let stream = HashMap::new();
+let distances = for (uid, cat, _) in clicks {
+let prev = stream.get(uid);
+if cat == start_cat {
+stream.insert(uid, 0);
+None
+} else if prev != -1 {
+if cat == end_cat {
+stream.insert(uid, -1);
+Some(prev)
+} else {
+stream.insert(uid, prev + 1);
+None
+}
+}
+None
+}
+a
