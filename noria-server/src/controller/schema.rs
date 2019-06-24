@@ -4,7 +4,7 @@ use dataflow::ops;
 use dataflow::prelude::*;
 use nom_sql::{Column, ColumnSpecification, SqlType};
 
-use dataflow::ops::ohua_test_op::{Typed};
+use dataflow::ops::ohua::{Typed};
 
 use slog;
 

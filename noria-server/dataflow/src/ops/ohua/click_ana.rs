@@ -1,4 +1,48 @@
 /// The interval tree allows for association of elements in intervals
+
+#[derive(Debug)]
+pub enum FreeGroup<A> {
+    One(A),
+    And(Box<FreeGroup<A>>, Box<FreeGroup<A>>),
+    Not(Box<FreeGroup<A>>),
+    Empty,
+}
+
+impl <A> FreeGroup<A> {
+    fn empty() -> FreeGroup<A> {
+        FreeGroup::Empty
+    }
+
+    fn and(self, other: FreeGroup<A>) -> FreeGroup<A> {
+        FreeGroup::And(Box::new(self), Box::new(other))
+    }
+
+    fn not(self) -> FreeGroup<A> {
+        match self {
+            FreeGroup::Not(s) => *s,
+            _ => FreeGroup::Not(Box::new(self)),
+        }
+    }
+
+    fn one(item: A) -> FreeGroup<A> {
+        FreeGroup::One(item)
+    }
+
+    // pub fn iter<'a>(&'a self) -> &'a impl Iterator<Item = A> {
+    //     self.iter_helper(false)
+    // }
+
+    // fn iter_helper<'a>(&'a self, negated: bool) -> &'a impl Iterator<Item=(&'a A, bool)> {
+    //     use std::iter::*;
+    //     match self {
+    //         FreeGroup::One(a) => &once((a, negated)),
+    //         FreeGroup::Not(inner) => &inner.iter_helper(!negated),
+    //         FreeGroup::Empty => &empty(),
+    //         FreeGroup::And(one, two) => &one.iter_helper(negated).chain(two.iter_helper(negated))
+    //     }
+    // }
+}
+
 pub mod iseq {
     pub struct Seq<T>(Vec<Interval<T>>);
 
@@ -8,7 +52,7 @@ pub mod iseq {
         elems: Vec<T>,
     }
 
-    impl<T> Interval<T> {
+    impl<T : std::fmt::Debug> Interval<T> {
         fn bounded(lower: T, upper: T, elems: Vec<T>) -> Interval<T>
         where
             T: std::cmp::Ord,
@@ -78,10 +122,8 @@ pub mod iseq {
         where
             T: std::cmp::Ord,
         {
-            assert!(
-                self.lower_bound.as_ref().map_or(true, |b| b <= &elem)
-                    && self.upper_bound.as_ref().map_or(true, |b| &elem < b)
-            );
+            #[cfg(test)]
+            assert!(self.is_in_bounds(&elem));
             self.elems.push(elem);
         }
 
@@ -166,14 +208,40 @@ pub mod iseq {
             }
         }
 
+        pub fn is_in_lower_bound(&self, item: &T) -> bool
+        where
+            T: std::cmp::Ord
+        {
+            self.lower_bound.as_ref().map_or(true, |b| b <= item)
+        }
+
+        pub fn is_in_upper_bound(&self, item: &T) -> bool
+        where
+            T: std::cmp::Ord
+        {
+            self.upper_bound.as_ref().map_or(true, |b| item <= b)
+        }
+
+        pub fn is_in_bounds(&self, item: &T) -> bool
+        where
+            T: std::cmp::Ord
+        {
+            self.is_in_upper_bound(item) && self.is_in_lower_bound(item)
+        }
+
         fn adjust_bound(&mut self, bound: T, lower: bool) -> Option<Interval<T>>
         where
             T: std::cmp::Ord,
+            T: std::fmt::Debug
         {
-            assert!(
-                (lower && self.upper_bound.as_ref().map_or(true, |b| &bound <= b))
-                    || (lower && self.lower_bound.as_ref().map_or(true, |b| b <= &bound)),
-                "The provided bound is invalid"
+            assert!(if lower {
+                self.is_in_upper_bound(&bound)
+            } else {
+                self.is_in_lower_bound(&bound)
+            },
+                    "The provided {} bound {:?} is invalid in \n{}",
+                    if lower { "lower" } else { "upper" },
+                    bound, self.draw()
             );
             let other_elements = if self
                 .get_bound(lower)
@@ -198,6 +266,75 @@ pub mod iseq {
         fn needs_cleanup(&self) -> bool {
             !self.has_lower_bound() && !self.has_upper_bound() && self.elems.is_empty()
         }
+
+        #[cfg(test)]
+        pub fn bounds_are_valid(&self) -> bool
+        where
+            T: std::cmp::Ord
+        {
+            self.lower_bound.as_ref().map_or(true, |l| self.is_in_upper_bound(l))
+        }
+
+        #[cfg(test)]
+        pub fn assert_is_left_of(&self, other: &Interval<T> )
+        where
+            T: std::cmp::Ord + std::fmt::Debug
+        {
+            if let Option::Some(b1) = self.lower_bound.as_ref() {
+                assert!(
+                    !other.has_lower_bound() || !other.is_in_lower_bound(b1),
+                    "lower bound is wrong between\n{}\n{}", self.draw(), other.draw()
+                );
+                assert!(
+                    !other.has_upper_bound() || other.is_in_upper_bound(b1),
+                    "lower bound is wrong between\n{}\n{}", self.draw(), other.draw()
+                );
+            }
+            if let Option::Some(b1) = self.upper_bound.as_ref() {
+                assert!(
+                    !other.has_lower_bound() || !other.is_in_lower_bound(b1),
+                    "upper bound is wrong between\n{}\n{}", self.draw(), other.draw()
+                );
+                assert!(
+                    !other.has_upper_bound() || other.is_in_upper_bound(b1),
+                    "upper bound is wrong between \n{}\n{}", self.draw(), other.draw()
+                );
+            }
+        }
+
+        #[cfg(test)]
+        pub fn assert_no_common_element_with(&self, other: &Interval<T>)
+        where
+            T: std::cmp::PartialEq + std::fmt::Debug
+        {
+            for e in self.elems.iter() {
+                for e2 in other.elems.iter() {
+                    assert!(e != e2, "Element {:?} is the same in \n{}\n{}", e, self.draw(), other.draw());
+                }
+            }
+        }
+
+        #[cfg(test)]
+        pub fn assert_all_elems_in_bound(&self)
+        where
+            T: std::cmp::Ord
+        {
+            for elem in self.elems.iter() {
+                assert!(self.is_in_bounds(elem), "Element {:?} is out of bounds\n{}", elem, self.draw());
+            }
+        }
+
+        pub fn draw(&self) -> String
+        where
+            T: std::fmt::Debug
+        {
+            format!("[{},{}) <{}>",
+                    self.lower_bound.as_ref().map_or("...".to_string(), |a| format!("{:?}", a)),
+                    self.upper_bound.as_ref().map_or("...".to_string(), |a| format!("{:?}", a)),
+                    format!("{:?}", self.elems)
+            )
+        }
+
     }
 
     fn collapse_result<T>(r: Result<T, T>) -> T {
@@ -206,17 +343,62 @@ pub mod iseq {
         }
     }
 
+    #[derive(Clone, Eq, PartialEq, Hash, Debug)]
+    pub enum Action<B> {
+        Open(B),
+        Close(B),
+        Insert(B),
+    }
+
     /// Split the elements vector into two parts on an element `e` such that all
     /// elements of of the first vector are strictly smaller than `e` and the
     /// elements of the second larger or equal to `e`.
 
-    impl<T: std::cmp::Ord> Seq<T> {
+    use super::FreeGroup;
+
+    impl<T: std::cmp::Ord + std::fmt::Debug> Seq<T> {
+
+        pub fn new() -> Seq<T> {
+            Seq(Vec::new())
+        }
+
+        pub fn handle(&mut self, action: FreeGroup<Action<T>>)
+        where
+            T: std::fmt::Debug
+        {
+
+            match dbg!(action) {
+                FreeGroup::One(ac) => self.handle_helper(ac, false),
+                FreeGroup::Not(n) => match *n {
+                    FreeGroup::One(ac) => self.handle_helper(ac, true),
+                    _ => unimplemented!(),
+                },
+                _ => unimplemented!(),
+            }
+        }
+
+        fn handle_helper(&mut self, action: Action<T>, negate: bool) {
+            match action {
+                Action::Open(i) => if !negate { self.open_interval(i) } else { self.reverse_open_interval(&i) },
+                Action::Close(i) => if !negate { self.close_interval(i) } else { self.reverse_close_interval(&i) },
+                Action::Insert(i) => if !negate { self.insert_element(i) } else { self.remove_element(&i) },
+            }
+        }
+
         fn open_interval(&mut self, bound: T) {
             self.expand_interval(bound, true)
         }
 
+        fn reverse_open_interval(&mut self, bound: &T) {
+            self.contract_interval(bound, true)
+        }
+
         fn close_interval(&mut self, bound: T) {
             self.expand_interval(bound, false)
+        }
+
+        fn reverse_close_interval(&mut self, bound: &T) {
+            self.contract_interval(bound, false)
         }
 
         fn insert_element(&mut self, elem: T) {
@@ -264,21 +446,34 @@ pub mod iseq {
         }
 
         fn expand_interval(&mut self, bound: T, lower: bool) {
+            #[cfg(test)]
+            eprintln!("Expanding intervals with {} bound {:?}",
+                      if lower { "lower" } else { "upper" },
+                      &bound
+            );
+
             match self.find_target_index(&bound) {
                 Ok(idx) => {
                     let ref mut target = self.0[idx];
+                    eprintln!("Targeting {}", target.draw());
                     target
                         .adjust_bound(bound, lower)
-                        .map(|new_node| self.0.insert(if lower { idx } else { idx + 1 }, new_node));
+                        .map(|new_node| {
+                            let iidx = idx; // if lower { idx } else { idx + 1 };
+                            eprintln!("Inserting leftover interval at index {}\n{}",iidx, new_node.draw());
+                            self.0.insert(iidx, new_node)
+                        });
                 }
-                Err(idx) => self.0.insert(
+                Err(idx) => {
+                    eprintln!("Inserting new interval at {}", idx);
+                    self.0.insert(
                     idx,
                     if lower {
                         Interval::with_lower_bound(bound, Vec::new())
                     } else {
                         Interval::with_upper_bound(bound, Vec::new())
                     },
-                ),
+                )},
             }
         }
 
@@ -286,8 +481,11 @@ pub mod iseq {
         fn find_exact_bound(&self, bound: &T, lower: bool) -> usize {
             self.0
                 .binary_search_by(|e| {
-                    if (lower && e.lower_bound.as_ref().map_or(false, |b| b == bound))
-                        || (!lower && e.upper_bound.as_ref().map_or(false, |b| b == bound))
+                    if (if lower {
+                        e.lower_bound.as_ref().map_or(false, |b| b == bound)
+                    } else {
+                        e.upper_bound.as_ref().map_or(false, |b| b == bound)
+                    })
                     {
                         std::cmp::Ordering::Equal
                     } else {
@@ -307,6 +505,18 @@ pub mod iseq {
             self.0.binary_search_by(|e| e.compare_elem(idx))
         }
 
+        fn prev<'a>(&'a self, idx: usize) -> Option<&'a Interval<T>> {
+            if idx == 0 {
+                Option::None
+            } else {
+                self.get(idx - 1)
+            }
+        }
+
+        fn get<'a>(&'a self, idx: usize) -> Option<&'a Interval<T>> {
+            self.0.get(idx)
+        }
+
         /// This is the more comprehensive version of `find_insert_index`. The
         /// `Ok` value here may point either to a bounded interval that should
         /// contain the element or the only available partially bounded interval
@@ -319,7 +529,7 @@ pub mod iseq {
             // happen, because b2 would have become the upper bound for the
             // first interval and vice versa.
             self.find_insert_index(elem).or_else(|idx| {
-                let candidates = (self.0.get(idx - 1), self.0.get(idx));
+                let candidates = (self.prev(idx), self.get(idx));
                 assert!(
                     candidates.0.map_or(true, |e| e.has_upper_bound())
                         || candidates.0.map_or(true, |e| e.has_lower_bound()),
@@ -332,6 +542,107 @@ pub mod iseq {
                 }
             })
         }
+
+        #[cfg(test)]
+        pub fn check_invariants(&self)
+        where
+            T: std::cmp::Ord + std::fmt::Debug
+        {
+            for (idx, iv) in self.0.iter().enumerate() {
+                assert!(iv.bounds_are_valid(), "bounds invalid");
+                assert!(iv.has_upper_bound() || self.0.get(idx + 1).map_or(true, Interval::has_lower_bound), "Two open intervals next to each other");
+                iv.assert_all_elems_in_bound();
+                for iv2 in self.0[idx + 1..].iter() {
+                    iv.assert_is_left_of(iv2);
+                    iv.assert_no_common_element_with(iv2);
+                }
+            }
+        }
+
+        pub fn draw(&self) -> String
+        where
+            T: std::fmt::Debug
+        {
+            format!("Seq({})\n{}", self.0.len(), self.0.iter().map(Interval::draw).collect::<Vec<String>>().join("\n"))
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use rand::random;
+        use rand::distributions::Distribution;
+        use std::collections::HashSet;
+
+        #[test]
+        fn test_iseq_insert() {
+            let mut seq = Seq::new();
+
+            seq.insert_element(1);
+            seq.insert_element(2);
+
+            seq.check_invariants();
+            println!("{}", seq.draw());
+        }
+
+        #[test]
+        fn test_iseq_double_close() {
+
+            for (b1, b2) in &[(1,2), (2,1), (-1, -2), (-2, -1)] {
+                let mut seq = Seq::new();
+
+                seq.close_interval(b1);
+                seq.close_interval(b2);
+
+                seq.check_invariants();
+                println!("{}", seq.draw());
+            }
+        }
+
+        #[test]
+        fn test_iseq() {
+            let mut taken = HashSet::new();
+
+            let mut seq = Seq::new();
+
+            for i in 0..100 {
+                let ac = random_action();
+                if taken.insert(ac.clone()) {
+                    seq.handle(FreeGroup::one(ac));
+                    seq.check_invariants();
+                }
+            }
+
+            for i in 0..100 {
+                let _ : u32 = i;
+                if i % 2 == 0 {
+                    let ac = random_action();
+                    if taken.insert(ac.clone()) {
+                        seq.handle(FreeGroup::one(ac));
+                    }
+                } else {
+                    let ac = taken.drain().next().unwrap();
+                    seq.handle(FreeGroup::not(FreeGroup::one(ac)));
+                }
+                seq.check_invariants();
+            }
+            for ac in taken.drain() {
+                seq.handle(FreeGroup::not(FreeGroup::one(ac)));
+                seq.check_invariants();
+            }
+        }
+
+
+        fn random_action() -> Action<i32> {
+            let v = random();
+            match random::<u8>() % 3 {
+                0 => Action::Open(v),
+                1 => Action::Close(v),
+                2 => Action::Insert(v),
+                i => panic!("{}", i),
+            }
+        }
+
     }
 }
 

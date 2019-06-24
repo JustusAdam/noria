@@ -9,8 +9,8 @@ use dataflow::ops::filter::FilterCondition;
 use dataflow::ops::join::{Join, JoinType};
 use dataflow::ops::latest::Latest;
 use dataflow::ops::project::{Project, ProjectExpression, ProjectExpressionBase};
-use dataflow::ops::ohua_test_op;
 use dataflow::{node, ops};
+use dataflow::ops::ohua;
 use mir::node::{GroupedNodeType, MirNode, MirNodeType};
 use mir::query::{MirQuery, QueryFlowParts};
 use mir::{Column, FlowNode, MirNodeRef};
@@ -570,7 +570,7 @@ fn make_grouped_node(
             mig.add_ingredient(
                 String::from(name),
                 column_names.as_slice(),
-                ohua_test_op::new_grouped_function_from_string(parent_na, over_col_indx, func, group_col_indx),
+                ohua::new_grouped_function_from_string(parent_na, over_col_indx, func, group_col_indx),
             )
         }
     };
