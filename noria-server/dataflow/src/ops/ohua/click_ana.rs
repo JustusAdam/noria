@@ -1,4 +1,8 @@
-/// The interval tree allows for association of elements in intervals
+use std::borrow::Cow;
+use std::cmp::Ordering;
+use std::collections::HashMap;
+
+use prelude::*;
 
 #[derive(Debug)]
 pub enum FreeGroup<A> {
@@ -43,10 +47,273 @@ impl<A> FreeGroup<A> {
     // }
 }
 
+type Timestamp = i32;
+type Category = i32;
+
+pub struct ClickAna {
+    // Function arguments
+    start_cat: Category,
+    end_cat: Category,
+
+    // Index for the input
+    // Perhaps at some point this should allow multiple ancestors?
+    src: IndexPair,
+
+    // This *should* be `Option<usize>`
+    cols: usize,
+
+    // Index into the cache
+    local_index: Option<IndexPair>,
+
+    // Precomputed data structures, copied from `dataflow::ops::grouped`
+    group_by: Vec<usize>,
+    out_key: Vec<usize>,
+    colfix: Vec<usize>,
+}
+
+impl ClickAna {
+    pub fn new(
+        src: NodeIndex,
+        start_cat: Category,
+        end_cat: Category,
+        mut group_by: Vec<usize>,
+    ) -> ClickAna {
+        group_by.sort();
+        let out_key = (0..group_by.len()).collect();
+        ClickAna {
+            src: src.into(),
+
+            start_cat: start_cat,
+            end_cat: end_cat,
+
+            local_index: None,
+            cols: 0, // Actually initialized in `on_connected`
+
+            group_by: group_by,
+            out_key: out_key,
+            colfix: Vec::new(),
+        }
+    }
+}
+
+impl Ingredient for ClickAna {
+    fn take(&mut self) -> NodeOperator {
+        unimplemented!()
+        //Clone::clone(self).into()
+    }
+
+    fn ancestors(&self) -> Vec<NodeIndex> {
+        vec![self.src.as_global()]
+    }
+
+    /// TODO check this is can be copied like this
+    fn on_connected(&mut self, g: &Graph) {
+        let srcn = &g[self.src.as_global()];
+
+        // group by all columns
+        self.cols = srcn.fields().len();
+
+        // build a translation mechanism for going from output columns to input columns
+        let colfix: Vec<_> = (0..self.cols)
+            .filter(|col| {
+                // since the generated value goes at the end,
+                // this is the n'th output value
+                // otherwise this column does not appear in output
+                self.group_by.iter().any(|c| c == col)
+            })
+            .collect();
+        self.colfix.extend(colfix.into_iter());
+    }
+
+    fn on_commit(&mut self, us: NodeIndex, remap: &HashMap<NodeIndex, IndexPair>) {
+        // who's our parent really?
+        self.src.remap(remap);
+
+        // who are we?
+        self.local_index = Some(remap[&us]);
+    }
+
+    fn on_input(
+        &mut self,
+        _: &mut Executor,
+        from: LocalNodeIndex,
+        rs: Records,
+        _: &mut Tracer,
+        replay_key_cols: Option<&[usize]>,
+        _: &DomainNodes,
+        state: &StateMap,
+    ) -> ProcessingResult {
+        unimplemented!();
+        // debug_assert_eq!(from, *self.src);
+
+        // if rs.is_empty() {
+        //     return ProcessingResult {
+        //         results: rs,
+        //         ..Default::default()
+        //     };
+        // }
+
+        // let group_by = &self.group_by;
+        // // Are the columns equal that we group over
+        // let cmp = |a: &Record, b: &Record| {
+        //     group_by
+        //         .iter()
+        //         .map(|&col| &a[col])
+        //         .cmp(group_by.iter().map(|&col| &b[col]))
+        // };
+
+        // // First, we want to be smart about multiple added/removed rows with same group.
+        // // For example, if we get a -, then a +, for the same group, we don't want to
+        // // execute two queries. We'll do this by sorting the batch by our group by.
+        // let mut rs: Vec<_> = rs.into();
+        // rs.sort_by(&cmp);
+
+        // // find the current value for this group
+        // let us = self.local_index.unwrap();
+        // let db = state
+        //     .get(*us)
+        //     .expect("grouped operators must have their own state materialized");
+
+        // let mut misses = Vec::new();
+        // let mut lookups = Vec::new();
+        // let mut out = Vec::new();
+        // {
+        //     let out_key = &self.out_key;
+        //     let mut handle_group =
+        //         |group_rs: ::std::vec::Drain<Record>, mut diffs: ::std::vec::Drain<_>| {
+        //             let mut group_rs = group_rs.peekable();
+
+        //             // Retrieve the values for this group
+        //             let mut group = Vec::with_capacity(group_by.len() + 1);
+        //             {
+        //                 let group_r = group_rs.peek().unwrap();
+        //                 let mut group_by_i = 0;
+        //                 for (col, v) in group_r.iter().enumerate() {
+        //                     if col == group_by[group_by_i] {
+        //                         group.push(v.clone());
+        //                         group_by_i += 1;
+        //                         if group_by_i == group_by.len() {
+        //                             break;
+        //                         }
+        //                     }
+        //                 }
+        //             }
+
+        //             let rs = {
+        //                 match db.lookup(&out_key[..], &KeyType::from(&group[..])) {
+        //                     LookupResult::Some(rs) => {
+        //                         if replay_key_cols.is_some() {
+        //                             lookups.push(Lookup {
+        //                                 on: *us,
+        //                                 cols: out_key.clone(),
+        //                                 key: group.clone(),
+        //                             });
+        //                         }
+
+        //                         debug_assert!(rs.len() <= 1, "a group had more than 1 result");
+        //                         rs
+        //                     }
+        //                     LookupResult::Missing => {
+        //                         misses.extend(group_rs.map(|r| Miss {
+        //                             on: *us,
+        //                             lookup_idx: out_key.clone(),
+        //                             lookup_cols: group_by.clone(),
+        //                             replay_cols: replay_key_cols.map(Vec::from),
+        //                             record: r.extract().0,
+        //                         }));
+        //                         return;
+        //                     }
+        //                 }
+        //             };
+
+        //             let old = rs.into_iter().next();
+        //             // current value is in the last output column
+        //             // or "" if there is no current group
+        //             let current = old.as_ref().map(|rows| match rows {
+        //                 Cow::Borrowed(rs) => Cow::Borrowed(&rs[rs.len() - 1]),
+        //                 Cow::Owned(rs) => Cow::Owned(rs[rs.len() - 1].clone()),
+        //             });
+
+        //             // new is the result of applying all diffs for the group to the current value
+        //             let new = inner.apply(current.as_ref().map(|v| &**v), &mut diffs as &mut _);
+        //             match current {
+        //                 Some(ref current) if new == **current => {
+        //                     // no change
+        //                 }
+        //                 _ => {
+        //                     if let Some(old) = old {
+        //                         // revoke old value
+        //                         debug_assert!(current.is_some());
+        //                         out.push(Record::Negative(old.into_owned()));
+        //                     }
+
+        //                     // emit positive, which is group + new.
+        //                     let mut rec = group;
+        //                     rec.push(new);
+        //                     out.push(Record::Positive(rec));
+        //                 }
+        //             }
+        //         };
+
+        //     let mut diffs = Vec::new();
+        //     let mut group_rs = Vec::new();
+        //     for r in rs {
+        //         // This essentially is
+        //         // rs.chunk_by(group_is_equal(self.group_by)).map(|chunk| {
+        //         //     handle_group(chunk.map(self.inner.to_diff(...)))
+        //         // })
+        //         if !group_rs.is_empty() && cmp(&group_rs[0], &r) != Ordering::Equal {
+        //             handle_group(&mut self.inner, group_rs.drain(..), diffs.drain(..));
+        //         }
+
+        //         diffs.push(self.inner.to_diff(&r[..], r.is_positive()));
+        //         group_rs.push(r);
+        //     }
+        //     assert!(!diffs.is_empty());
+        //     handle_group(&mut self.inner, group_rs.drain(..), diffs.drain(..));
+        // }
+
+        // ProcessingResult {
+        //     results: out.into(),
+        //     lookups,
+        //     misses,
+        // }
+    }
+
+    fn suggest_indexes(&self, this: NodeIndex) -> HashMap<NodeIndex, Vec<usize>> {
+        // index by our primary key
+        Some((this, self.out_key.clone())).into_iter().collect()
+    }
+
+    fn resolve(&self, col: usize) -> Option<Vec<(NodeIndex, usize)>> {
+        if col == self.colfix.len() {
+            return None;
+        }
+        Some(vec![(self.src.as_global(), self.colfix[col])])
+    }
+
+    fn description(&self, detailed: bool) -> String {
+        "click-ana".to_string()
+    }
+
+    fn parent_columns(&self, column: usize) -> Vec<(NodeIndex, Option<usize>)> {
+        if column == self.colfix.len() {
+            return vec![(self.src.as_global(), None)];
+        }
+        vec![(self.src.as_global(), Some(self.colfix[column]))]
+    }
+
+    fn is_selective(&self) -> bool {
+        true
+    }
+}
+
+
+
 pub mod iseq {
     pub struct Seq<T>(Vec<Interval<T>>);
 
-    struct Interval<T> {
+    pub struct Interval<T> {
         lower_bound: Option<T>,
         upper_bound: Option<T>,
         elems: Vec<T>,
@@ -57,7 +324,7 @@ pub mod iseq {
         where
             T: std::cmp::Ord,
         {
-            assert!(lower <= upper);
+            debug_assert!(lower <= upper);
             Interval {
                 lower_bound: Option::Some(lower),
                 upper_bound: Option::Some(upper),
@@ -112,9 +379,9 @@ pub mod iseq {
                 }
                 // Invariant: elems is never empty (if no bounds exist)
                 (Option::None, Option::None) => {
-                    assert!(self.elems.len() != 0);
+                    debug_assert!(self.elems.len() != 0);
                     self.elems[0].cmp(elem)
-                },
+                }
             }
         }
 
@@ -126,8 +393,7 @@ pub mod iseq {
         where
             T: std::cmp::Ord,
         {
-            #[cfg(test)]
-            assert!(self.is_in_bounds(&elem));
+            debug_assert!(self.is_in_bounds(&elem));
             self.elems.push(elem);
         }
 
@@ -142,11 +408,11 @@ pub mod iseq {
                 .is_some()
         }
 
-        fn has_upper_bound(&self) -> bool {
+        pub fn has_upper_bound(&self) -> bool {
             self.upper_bound.is_some()
         }
 
-        fn is_closed(&self) -> bool {
+        pub fn is_closed(&self) -> bool {
             self.has_upper_bound() && self.has_lower_bound()
         }
 
@@ -238,7 +504,7 @@ pub mod iseq {
             T: std::cmp::Ord,
             T: std::fmt::Debug,
         {
-            assert!(
+            debug_assert!(
                 if lower {
                     self.is_in_upper_bound(&bound)
                 } else {
@@ -351,7 +617,7 @@ pub mod iseq {
             }
         }
 
-        pub fn draw(&self) -> String
+        fn draw(&self) -> String
         where
             T: std::fmt::Debug,
         {
@@ -463,7 +729,7 @@ pub mod iseq {
             if let Result::Ok(idx) = self.find_target_index(elem) {
                 let cleanup_necessary = {
                     let ref mut target = self.0[idx];
-                    assert!(target.remove_element(elem));
+                    debug_assert!(target.remove_element(elem));
                     target.needs_cleanup()
                 };
                 if cleanup_necessary {
@@ -472,6 +738,10 @@ pub mod iseq {
             } else {
                 panic!("Element-to-remove is not present");
             }
+        }
+
+        fn complete_intervals<'a>(&'a self) -> impl Iterator<Item = &'a Interval<T>> {
+            self.0.iter().filter(|e| e.is_closed())
         }
 
         fn contract_interval(&mut self, bound: &T, lower: bool) {
@@ -485,7 +755,7 @@ pub mod iseq {
                 } else {
                     target.upper_bound.take()
                 };
-                assert!(&removed.unwrap() == bound);
+                debug_assert!(&removed.unwrap() == bound);
                 target.needs_cleanup()
             };
 
@@ -591,7 +861,7 @@ pub mod iseq {
             // first interval and vice versa.
             self.find_insert_index(elem).or_else(|idx| {
                 let candidates = (self.prev(idx), self.get(idx));
-                assert!(
+                debug_assert!(
                     candidates.0.map_or(true, |e| e.has_upper_bound())
                         || candidates.1.map_or(true, |e| e.has_lower_bound()),
                     "Invariant broken, both intervals lack bounds."
@@ -643,7 +913,6 @@ pub mod iseq {
     #[cfg(test)]
     mod tests {
         use super::*;
-        use rand::distributions::Distribution;
         use rand::random;
         use std::collections::HashSet;
 
@@ -661,7 +930,6 @@ pub mod iseq {
 
         #[test]
         fn test_iseq_action_around_closed_interval() {
-
             for t in &[(1, 2), (-2, -1)] {
                 let mut seq = Seq::new();
                 println!("\nTesting {:?}", &t);
@@ -681,8 +949,9 @@ pub mod iseq {
 
         #[test]
         fn test_iseq_double_close() {
-            for (b1, b2) in &[(1, 2), (2, 1), (-1, -2), (-2, -1)] {
-                println!("\nTesting {:?}", (*b1 as i32, *b2 as i32));
+            for t in &[(1, 2), (2, 1), (-1, -2), (-2, -1)] {
+                let (b1, b2): &(i32, i32) = t;
+                println!("\nTesting {:?}", *t);
                 let mut seq = Seq::new();
 
                 seq.close_interval(b1);

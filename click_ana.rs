@@ -23,19 +23,19 @@ fn click_ana(start_cat: Category,
 
 
 fn partial_click_ana(start_cat: Category, end_cat: Category, clicks: Stream<(UID, Category, Time)>) -> i32 {
-    use IntervalSequence::Action;
+    use iseq::Action;
     let click_streams = group_by::<0>(clicks);
     Stream::concat(for click_stream in click_streams {
-        let sequences = IntervalSequence::new();
+        let sequences = iseq::Seq::new();
         for (_, cat, time) in stream {
             let ev = if cat == start_cat {
                 Action::Open(time)
             } else if cat == end_cat {
                 Action::Close(time)
             } else {
-                Action::Record(time)
+                Action::Insert(time)
             }
-            sequences.apply(action);
+            sequences.apply(ev);
         }
         sequences.complete_intervals().map(Interval::len)
     })
