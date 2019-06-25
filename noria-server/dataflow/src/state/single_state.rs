@@ -7,7 +7,7 @@ use state::keyed_state::KeyedState;
 
 pub(super) struct SingleState {
     key: Vec<usize>,
-    state: KeyedState,
+    state: KeyedState<Vec<Row>>,
     partial: bool,
     rows: usize,
 }
