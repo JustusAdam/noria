@@ -194,6 +194,23 @@ where
         ))
     }
 
+
+    #[allow(clippy::too_many_arguments)]
+    fn on_input_raw_mut(
+        &mut self,
+        executor: &mut Executor,
+        from: LocalNodeIndex,
+        data: Records,
+        tracer: &mut Tracer,
+        replay: &ReplayContext,
+        domain: &DomainNodes,
+        states: &mut StateMap,
+    ) -> RawProcessingResult {
+        self.on_input_raw(
+            executor, from, data, tracer, replay, domain, states
+        )
+    }
+
     /// Triggered whenever a replay occurs, to allow the operator to react evict from any auxillary
     /// state other than what is stored in its materialization.
     fn on_eviction(

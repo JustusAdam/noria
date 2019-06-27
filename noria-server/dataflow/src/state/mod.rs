@@ -3,6 +3,9 @@ mod memory_state;
 mod persistent_state;
 mod single_state;
 
+pub mod cstate;
+pub mod click_ana;
+
 use std::borrow::Cow;
 use std::ops::Deref;
 use std::rc::Rc;
@@ -15,6 +18,7 @@ crate use self::memory_state::MemoryState;
 crate use self::persistent_state::PersistentState;
 
 crate trait State: SizeOf + Send {
+
     /// Add an index keyed by the given columns and replayed to by the given partial tags.
     fn add_key(&mut self, columns: &[usize], partial: Option<Vec<Tag>>);
 
@@ -50,6 +54,10 @@ crate trait State: SizeOf + Send {
     fn evict_keys(&mut self, tag: Tag, keys: &[Vec<DataType>]) -> Option<(&[usize], u64)>;
 
     fn clear(&mut self);
+
+    fn as_click_ana_state<'a>(&'a mut self) -> Option<&'a mut self::click_ana::ClickAnaState> {
+        Option::None
+    }
 }
 
 #[derive(Clone, Debug)]

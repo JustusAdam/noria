@@ -38,7 +38,7 @@ impl Node {
                         let Input { dst, data, tracer } = unsafe { inner.take() };
                         let mut rs = b.process(addr, data, &*state);
 
-                        // When a replay originates at a base node, we replay the data *through* that
+                        // When a replay originates at a base node, we replay the data *through* thatRow
                         // same base node because its column set may have changed. However, this replay
                         // through the base node itself should *NOT* update the materialization,
                         // because otherwise it would duplicate each record in the base table every
@@ -116,7 +116,7 @@ impl Node {
                         // we need to own the data
                         let old_data = mem::replace(data, Records::default());
 
-                        match i.on_input_raw(ex, from, old_data, &mut tracer, &replay, nodes, state)
+                        match i.on_input_raw_mut(ex, from, old_data, &mut tracer, &replay, nodes, state)
                         {
                             RawProcessingResult::Regular(m) => {
                                 mem::replace(data, m.results);
