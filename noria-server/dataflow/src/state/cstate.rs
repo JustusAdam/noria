@@ -34,7 +34,7 @@ impl super::State for ClickAnaState {
         unimplemented!()
     }
     fn is_useful(&self) -> bool {
-        unimplemented!()
+        !self.states.is_empty()
     }
     fn is_partial(&self) -> bool {
         unimplemented!()
@@ -55,7 +55,7 @@ impl super::State for ClickAnaState {
         unimplemented!()
     }
     fn keys(&self) -> Vec<Vec<usize>> {
-        unimplemented!()
+        self.states.iter().map(|s| s.key().to_vec()).collect()
     }
     fn cloned_records(&self) -> Vec<Vec<DataType>> {
         unimplemented!()
