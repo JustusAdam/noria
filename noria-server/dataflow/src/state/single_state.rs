@@ -26,7 +26,7 @@ macro_rules! insert_row_match_impl {
 
 macro_rules! remove_row_match_impl {
     ($self:ident, $r:ident, $do_remove:ident, $map:ident) => {{
-        // TODO: can we avoid the Clone here?
+        // TODO: can we avoid the Clone here (in `MakeKey::from_row`)?
         let key = MakeKey::from_row(&$self.key, $r);
         if let Some(ref mut rs) = $map.get_mut(&key) {
             return $do_remove(&mut $self.rows, rs);
