@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
+use crate::state::click_ana::{ClickAnaState};
 use prelude::*;
 
 #[derive(Debug)]
@@ -285,6 +286,11 @@ impl Ingredient for ClickAna {
     fn is_selective(&self) -> bool {
         true
     }
+
+    fn make_special_state(&self) -> Option<Box<State>> {
+        Option::Some(Box::new(ClickAnaState::new()))
+    }
+
 }
 
 

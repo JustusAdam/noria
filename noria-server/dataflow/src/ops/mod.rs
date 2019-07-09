@@ -238,6 +238,9 @@ impl Ingredient for NodeOperator {
     fn requires_full_materialization(&self) -> bool {
         impl_ingredient_fn_ref!(self, requires_full_materialization,)
     }
+    fn make_special_state(&self) -> Option<Box<State>> {
+        impl_ingredient_fn_ref!(self, make_special_state,)
+    }
 }
 
 #[cfg(test)]

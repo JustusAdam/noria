@@ -167,6 +167,10 @@ impl Node {
     pub fn description(&self, detailed: bool) -> String {
         Ingredient::description(&**self, detailed)
     }
+
+    crate fn make_special_state(&self) -> Option<Box<State>> {
+        Ingredient::make_special_state(&**self)
+    }
 }
 
 // publicly accessible attributes

@@ -799,13 +799,12 @@ impl Domain {
                             .unwrap();
                     }
                     Packet::PrepareState { node, state } => {
+                        // My assumption, for the time being, is that the state
+                        // for a UDF is always local
                         use payload::InitialState;
                         match state {
                             InitialState::PartialLocal(index) => {
-                                if !self.state.contains_key(node) {
-                                    self.state.insert(node, box MemoryState::default());
-                                }
-                                let state = self.state.get_mut(node).unwrap();
+                                let state = make_or_get_state(&mut self.state, node, &self.nodes[node].borrow());
                                 for (key, tags) in index {
                                     info!(self.log, "told to prepare partial state";
                                            "key" => ?key,
@@ -814,10 +813,7 @@ impl Domain {
                                 }
                             }
                             InitialState::IndexedLocal(index) => {
-                                if !self.state.contains_key(node) {
-                                    self.state.insert(node, box MemoryState::default());
-                                }
-                                let state = self.state.get_mut(node).unwrap();
+                                let state = make_or_get_state(&mut self.state, node,& self.nodes[node].borrow());
                                 for idx in index {
                                     info!(self.log, "told to prepare full state";
                                            "key" => ?idx);
@@ -2731,4 +2727,11 @@ impl Domain {
         self.wait_time.start();
         res
     }
+}
+
+fn make_or_get_state<'a>(state: &'a mut StateMap, idx: LocalNodeIndex, node:&Node) -> &'a mut Box<State> {
+    if !state.contains_key(idx) {
+        state.insert(idx, node.make_special_state().unwrap_or_else(|| box MemoryState::default()));
+    }
+    state.get_mut(idx).unwrap()
 }

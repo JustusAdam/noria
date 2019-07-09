@@ -286,4 +286,8 @@ where
     fn requires_full_materialization(&self) -> bool {
         false
     }
+
+    fn make_special_state(&self) -> Option<Box<State>> {
+        Option::None
+    }
 }
