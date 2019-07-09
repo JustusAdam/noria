@@ -1,9 +1,8 @@
 use common::SizeOf;
 use fnv::FnvBuildHasher;
 use prelude::*;
+use rand::prelude::*;
 use std::borrow::Cow;
-
-use rand::{Rng, ThreadRng};
 use std::sync::Arc;
 
 /// Allocate a new end-user facing result table.
@@ -24,7 +23,7 @@ where
 fn new_inner(
     cols: usize,
     key: &[usize],
-    trigger: Option<Arc<Fn(&[DataType]) -> bool + Send + Sync>>,
+    trigger: Option<Arc<dyn Fn(&[DataType]) -> bool + Send + Sync>>,
 ) -> (SingleReadHandle, WriteHandle) {
     let contiguous = {
         let mut contiguous = true;
@@ -274,11 +273,6 @@ impl WriteHandle {
         }
         bytes_to_be_freed
     }
-
-    crate fn clear(&mut self) {
-        self.mem_size = 0;
-        self.handle.purge();
-    }
 }
 
 impl SizeOf for WriteHandle {
@@ -297,7 +291,7 @@ impl SizeOf for WriteHandle {
 #[derive(Clone)]
 pub struct SingleReadHandle {
     handle: multir::Handle,
-    trigger: Option<Arc<Fn(&[DataType]) -> bool + Send + Sync>>,
+    trigger: Option<Arc<dyn Fn(&[DataType]) -> bool + Send + Sync>>,
     key: Vec<usize>,
 }
 

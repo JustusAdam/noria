@@ -1,7 +1,7 @@
 use fnv::FnvBuildHasher;
 use rahashmap::HashMap as RaHashMap;
 use std::rc::Rc;
-use rand::{ThreadRng,Rng};
+use rand::prelude::{ThreadRng,Rng};
 
 use super::mk_key::MakeKey;
 use common::SizeOf;

@@ -163,6 +163,7 @@ impl DomainBuilder {
             waiting: Default::default(),
             reader_triggered: Default::default(),
             replay_paths: Default::default(),
+            replay_paths_by_dst: Default::default(),
 
             ingress_inject: Default::default(),
 
@@ -172,7 +173,6 @@ impl DomainBuilder {
             channel_coordinator,
 
             buffered_replay_requests: Default::default(),
-            has_buffered_replay_requests: false,
             replay_batch_timeout: self.config.replay_batch_timeout,
             timed_purges: Default::default(),
 
@@ -189,6 +189,9 @@ impl DomainBuilder {
             wait_time: Timer::new(),
             process_times: TimerSet::new(),
             process_ptimes: TimerSet::new(),
+
+            total_replay_time: Timer::new(),
+            total_forward_time: Timer::new(),
         }
     }
 }
@@ -222,6 +225,8 @@ pub struct Domain {
     reader_triggered: Map<HashSet<Vec<DataType>>>,
     timed_purges: VecDeque<TimedPurge>,
 
+    replay_paths_by_dst: Map<HashMap<Vec<usize>, Vec<Tag>>>,
+
     concurrent_replays: usize,
     max_concurrent_replays: usize,
     replay_request_queue: VecDeque<(Tag, Vec<DataType>)>,
@@ -232,7 +237,6 @@ pub struct Domain {
     channel_coordinator: Arc<ChannelCoordinator>,
 
     buffered_replay_requests: HashMap<Tag, (time::Instant, HashSet<Vec<DataType>>)>,
-    has_buffered_replay_requests: bool,
     replay_batch_timeout: time::Duration,
     delayed_for_self: VecDeque<Box<Packet>>,
 
@@ -244,6 +248,11 @@ pub struct Domain {
     wait_time: Timer<SimpleTracker, RealTime>,
     process_times: TimerSet<LocalNodeIndex, SimpleTracker, RealTime>,
     process_ptimes: TimerSet<LocalNodeIndex, SimpleTracker, ThreadTime>,
+
+    /// time spent processing replays
+    total_replay_time: Timer<SimpleTracker, RealTime>,
+    /// time spent processing ordinary, forward updates
+    total_forward_time: Timer<SimpleTracker, RealTime>,
 }
 
 impl Domain {
@@ -253,24 +262,16 @@ impl Domain {
         miss_columns: &[usize],
         miss_in: LocalNodeIndex,
     ) {
-        let mut found = false;
-        let tags: Vec<Tag> = self.replay_paths.keys().cloned().collect();
-        for tag in tags {
-            if let TriggerEndpoint::Start(..) = self.replay_paths[&tag].trigger {
-                continue;
+        let mut tags = Vec::new();
+        if let Some(ref candidates) = self.replay_paths_by_dst.get(miss_in) {
+            if let Some(ts) = candidates.get(miss_columns) {
+                // the clone is a bit sad; self.request_partial_replay doesn't use
+                // self.replay_paths_by_dst.
+                tags = ts.clone();
             }
-            {
-                let p = self.replay_paths[&tag].path.last().unwrap();
-                if p.node != miss_in {
-                    continue;
-                }
-                assert!(p.partial_key.is_some());
-                let pkey = p.partial_key.as_ref().unwrap();
-                if &pkey[..] != miss_columns {
-                    continue;
-                }
-            }
+        }
 
+        for &tag in &tags {
             // send a message to the source domain(s) responsible
             // for the chosen tag so they'll start replay.
             let key = miss_key.clone(); // :(
@@ -296,7 +297,6 @@ impl Domain {
                 // `Self::handle()`)
                 self.delayed_for_self
                     .push_back(box Packet::RequestPartialReplay { tag, key });
-                found = true;
                 continue;
             }
 
@@ -304,11 +304,9 @@ impl Domain {
             // these ancestors now, and some later. this will cause more of the replay to be
             // buffered up at the union above us, but that's probably fine.
             self.request_partial_replay(tag, key);
-            found = true;
-            continue;
         }
 
-        if !found {
+        if tags.is_empty() {
             unreachable!(format!(
                 "no tag found to fill missing value {:?} in {}.{:?}",
                 miss_key, miss_in, miss_columns
@@ -441,20 +439,23 @@ impl Domain {
                 // we just naively release one slot here, a union with two parents would mean that
                 // `self.concurrent_replays` constantly grows by +1 (+2 for the backfill requests,
                 // -1 when satisfied), which would lead to a deadlock!
-                let mut requests_satisfied = {
-                    let last = self.replay_paths[&tag].path.last().unwrap();
-                    self.replay_paths
-                        .iter()
-                        .filter(|&(_, p)| {
-                            if let TriggerEndpoint::End { .. } = p.trigger {
-                                let p = p.path.last().unwrap();
-                                p.node == last.node && p.partial_key == last.partial_key
-                            } else {
-                                false
-                            }
-                        })
-                        .count()
-                };
+                let mut requests_satisfied = 0;
+                let last = self.replay_paths[&tag].path.last().unwrap();
+                if let Some(ref cs) = self.replay_paths_by_dst.get(last.node) {
+                    if let Some(ref tags) = cs.get(last.partial_key.as_ref().unwrap()) {
+                        requests_satisfied = tags
+                            .iter()
+                            .filter(|tag| {
+                                if let TriggerEndpoint::End { .. } = self.replay_paths[tag].trigger
+                                {
+                                    true
+                                } else {
+                                    false
+                                }
+                            })
+                            .count();
+                    }
+                }
 
                 // we also sent that many requests *per key*.
                 requests_satisfied *= num;
@@ -490,7 +491,7 @@ impl Domain {
         }
     }
 
-    fn dispatch(&mut self, m: Box<Packet>, sends: &mut EnqueuedSends, executor: &mut Executor) {
+    fn dispatch(&mut self, m: Box<Packet>, sends: &mut EnqueuedSends, executor: &mut dyn Executor) {
         let src = m.src();
         let me = m.dst();
 
@@ -577,6 +578,7 @@ impl Domain {
                 // but, for now, here we go:
                 // first, what partial replay paths go through this node?
                 let from = self.nodes[src].borrow().global_addr();
+                // TODO: this is a linear walk of replay paths -- we should make that not linear
                 let deps: Vec<_> = self
                     .replay_paths
                     .iter()
@@ -685,19 +687,25 @@ impl Domain {
         &mut self,
         m: Box<Packet>,
         sends: &mut EnqueuedSends,
-        executor: &mut Executor,
+        executor: &mut dyn Executor,
         top: bool,
     ) {
-        self.wait_time.stop();
+        if self.wait_time.is_running() {
+            self.wait_time.stop();
+        }
         m.trace(PacketEvent::Handle);
 
         match *m {
             Packet::Message { .. } | Packet::Input { .. } => {
                 // WO for https://github.com/rust-lang/rfcs/issues/1403
+                self.total_forward_time.start();
                 self.dispatch(m, sends, executor);
+                self.total_forward_time.stop();
             }
             Packet::ReplayPiece { .. } => {
+                self.total_replay_time.start();
                 self.handle_replay(m, sends, executor);
+                self.total_replay_time.stop();
             }
             Packet::Evict { .. } | Packet::EvictKeys { .. } => {
                 self.handle_eviction(m, sends);
@@ -966,6 +974,16 @@ impl Domain {
                             }
                         };
 
+                        if let TriggerEndpoint::End { .. } | TriggerEndpoint::Local(..) = trigger {
+                            let last = path.last().unwrap();
+                            self.replay_paths_by_dst
+                                .entry(last.node)
+                                .or_insert_with(HashMap::new)
+                                .entry(last.partial_key.clone().unwrap())
+                                .or_insert_with(Vec::new)
+                                .push(tag);
+                        }
+
                         self.replay_paths.insert(
                             tag,
                             ReplayPath {
@@ -977,6 +995,7 @@ impl Domain {
                         );
                     }
                     Packet::RequestReaderReplay { key, cols, node } => {
+                        self.total_replay_time.start();
                         // the reader could have raced with us filling in the key after some
                         // *other* reader requested it, so let's double check that it indeed still
                         // misses!
@@ -1006,6 +1025,7 @@ impl Domain {
                         {
                             self.find_tags_and_replay(key, &cols[..], node);
                         }
+                        self.total_replay_time.stop();
                     }
                     Packet::RequestPartialReplay { tag, key } => {
                         trace!(
@@ -1014,13 +1034,16 @@ impl Domain {
                            "tag" => tag.id(),
                            "key" => format!("{:?}", key)
                         );
+                        self.total_replay_time.start();
                         self.seed_replay(tag, &key[..], sends, executor);
+                        self.total_replay_time.stop();
                     }
                     Packet::StartReplay { tag, from } => {
                         use std::thread;
                         assert_eq!(self.replay_paths[&tag].source, Some(from));
 
                         let start = time::Instant::now();
+                        self.total_replay_time.start();
                         info!(self.log, "starting replay");
 
                         // we know that the node is materialized, as the migration coordinator
@@ -1144,11 +1167,14 @@ impl Domain {
                                 })
                                 .unwrap();
                         }
-
                         self.handle_replay(p, sends, executor);
+
+                        self.total_replay_time.stop();
                     }
                     Packet::Finish(tag, ni) => {
+                        self.total_replay_time.start();
                         self.finish_replay(tag, ni, sends, executor);
+                        self.total_replay_time.stop();
                     }
                     Packet::Ready { node, purge, index } => {
                         assert_eq!(self.mode, DomainMode::Forwarding);
@@ -1156,7 +1182,7 @@ impl Domain {
                         self.nodes[node].borrow_mut().purge = purge;
 
                         if !index.is_empty() {
-                            let mut s: Box<State> = {
+                            let mut s: Box<dyn State> = {
                                 let n = self.nodes[node].borrow();
                                 let params = &self.persistence_parameters;
                                 match (n.get_base(), &params.mode) {
@@ -1210,6 +1236,8 @@ impl Domain {
                         let domain_stats = noria::debug::stats::DomainStats {
                             total_time: self.total_time.num_nanoseconds(),
                             total_ptime: self.total_ptime.num_nanoseconds(),
+                            total_replay_time: self.total_replay_time.num_nanoseconds(),
+                            total_forward_time: self.total_forward_time.num_nanoseconds(),
                             wait_time: self.wait_time.num_nanoseconds(),
                         };
 
@@ -1294,32 +1322,32 @@ impl Domain {
             }
         }
 
-        if self.has_buffered_replay_requests {
+        if !self.buffered_replay_requests.is_empty() {
+            self.total_replay_time.start();
             let now = time::Instant::now();
             let to = self.replay_batch_timeout;
-            self.has_buffered_replay_requests = false;
             let elapsed_replays: Vec<_> = {
-                let has = &mut self.has_buffered_replay_requests;
                 self.buffered_replay_requests
                     .iter_mut()
                     .filter_map(|(&tag, &mut (first, ref mut keys))| {
                         if !keys.is_empty() && now.duration_since(first) > to {
-                            let l = keys.len();
-                            Some((tag, mem::replace(keys, HashSet::with_capacity(l))))
+                            // will be removed by retain below
+                            Some((tag, mem::replace(keys, HashSet::new())))
                         } else {
-                            if !keys.is_empty() {
-                                *has = true;
-                            }
                             None
                         }
                     })
                     .collect()
             };
+            self.buffered_replay_requests
+                .retain(|_, (_, ref keys)| !keys.is_empty());
             for (tag, keys) in elapsed_replays {
                 self.seed_all(tag, keys, sends, executor);
             }
+            self.total_replay_time.stop();
         }
 
+        let mut swap = HashSet::new();
         while let Some(tp) = self.timed_purges.front() {
             let now = time::Instant::now();
             if tp.time <= now {
@@ -1331,13 +1359,23 @@ impl Domain {
                         for key in tp.keys {
                             wh.mut_with_key(&key[..]).mark_hole();
                         }
-                        wh.swap();
+                        swap.insert(tp.view);
                     }
                 })
                 .unwrap();
             } else {
                 break;
             }
+        }
+        for n in swap {
+            self.nodes[n]
+                .borrow_mut()
+                .with_reader_mut(|r| {
+                    if let Some(wh) = r.writer_mut() {
+                        wh.swap();
+                    }
+                })
+                .unwrap();
         }
 
         if top {
@@ -1351,7 +1389,9 @@ impl Domain {
                 self.handle(m, sends, executor, false);
             }
         }
-        self.wait_time.start();
+        if !self.wait_time.is_running() {
+            self.wait_time.start();
+        }
     }
 
     fn seed_row<'a>(&self, source: LocalNodeIndex, row: Cow<'a, [DataType]>) -> Record {
@@ -1377,7 +1417,7 @@ impl Domain {
         tag: Tag,
         keys: HashSet<Vec<DataType>>,
         sends: &mut EnqueuedSends,
-        ex: &mut Executor,
+        ex: &mut dyn Executor,
     ) {
         let (m, source, is_miss) = match self.replay_paths[&tag] {
             ReplayPath {
@@ -1470,7 +1510,7 @@ impl Domain {
         tag: Tag,
         key: &[DataType],
         sends: &mut EnqueuedSends,
-        ex: &mut Executor,
+        ex: &mut dyn Executor,
     ) {
         if let ReplayPath {
             trigger: TriggerEndpoint::Start(..),
@@ -1486,18 +1526,14 @@ impl Domain {
             use std::collections::hash_map::Entry;
             let key = Vec::from(key);
             match self.buffered_replay_requests.entry(tag) {
-                Entry::Occupied(mut o) => {
-                    if o.get().1.is_empty() {
-                        o.get_mut().0 = time::Instant::now();
-                    }
+                Entry::Occupied(o) => {
+                    assert!(!o.get().1.is_empty());
                     o.into_mut().1.insert(key);
-                    self.has_buffered_replay_requests = true;
                 }
                 Entry::Vacant(v) => {
                     let mut ks = HashSet::new();
                     ks.insert(key);
                     v.insert((time::Instant::now(), ks));
-                    self.has_buffered_replay_requests = true;
                 }
             }
 
@@ -1570,7 +1606,7 @@ impl Domain {
     }
 
     #[allow(clippy::cognitive_complexity)]
-    fn handle_replay(&mut self, m: Box<Packet>, sends: &mut EnqueuedSends, ex: &mut Executor) {
+    fn handle_replay(&mut self, m: Box<Packet>, sends: &mut EnqueuedSends, ex: &mut dyn Executor) {
         let tag = m.tag().unwrap();
         if self.nodes[self.replay_paths[&tag].path.last().unwrap().node]
             .borrow()
@@ -1726,20 +1762,6 @@ impl Domain {
 
                         // are we about to fill a hole?
                         if target {
-                            // if the node is a reader beyond the materialization frontier, we want
-                            // to purge it before we fill it with new keys so that we don't amass
-                            // any serious state. if it's just an internal materialization, state
-                            // will be evicted by our children when they process replays that use
-                            // this state.
-                            if n.beyond_mat_frontier() {
-                                let ni = n.global_addr().index();
-                                n.with_reader_mut(|r| {
-                                    trace!(self.log, "purging state from reader"; "node" => ni);
-                                    r.writer_mut().unwrap().clear();
-                                })
-                                .is_ok();
-                            }
-
                             let backfill_keys = backfill_keys.as_ref().unwrap();
                             // mark the state for the key being replayed as *not* a hole otherwise
                             // we'll just end up with the same "need replay" response that
@@ -2060,20 +2082,15 @@ impl Domain {
                                     }
 
                                     if evict_tag.is_none() {
-                                        for (&tag, rp) in &self.replay_paths {
-                                            match rp.trigger {
-                                                TriggerEndpoint::Local(..)
-                                                | TriggerEndpoint::End { .. } => {
-                                                    if tag_match(rp, pn) {
-                                                        // this is the tag we would have used to
-                                                        // fill a lookup hole in this ancestor, so
-                                                        // this is the tag we need to evict from.
-                                                        evict_tag = Some(tag);
-                                                        break;
-                                                    }
-                                                }
-                                                TriggerEndpoint::Start(..)
-                                                | TriggerEndpoint::None => {}
+                                        if let Some(ref cs) = self.replay_paths_by_dst.get(pn) {
+                                            if let Some(ref tags) = cs.get(&lookup.cols) {
+                                                // this is the tag we would have used to
+                                                // fill a lookup hole in this ancestor, so
+                                                // this is the tag we need to evict from.
+
+                                                // TODO: could there have been multiple
+                                                assert_eq!(tags.len(), 1);
+                                                evict_tag = Some(tags[0]);
                                             }
                                         }
                                     }
@@ -2161,7 +2178,8 @@ impl Domain {
                                 if self.nodes[dst].borrow().beyond_mat_frontier() {
                                     // make sure we eventually evict these from here
                                     self.timed_purges.push_back(TimedPurge {
-                                        time: time::Instant::now() + time::Duration::from_secs(1),
+                                        time: time::Instant::now()
+                                            + time::Duration::from_millis(50),
                                         keys: for_keys,
                                         view: dst,
                                         tag,
@@ -2296,7 +2314,7 @@ impl Domain {
         tag: Tag,
         node: LocalNodeIndex,
         sends: &mut EnqueuedSends,
-        ex: &mut Executor,
+        ex: &mut dyn Executor,
     ) {
         let mut was = mem::replace(&mut self.mode, DomainMode::Forwarding);
         let finished = if let DomainMode::Replaying {
@@ -2393,6 +2411,7 @@ impl Domain {
             state: &mut StateMap,
             nodes: &mut DomainNodes,
         ) {
+            // TODO: this is a linear walk of replay paths -- we should make that not linear
             for (tag, ref path) in replay_paths {
                 if path.source == Some(node) {
                     // Check whether this replay path is for the same key.
@@ -2613,7 +2632,6 @@ impl Domain {
         self.control_reply_tx
             .send(ControlReplyPacket::Booted(self.shard.unwrap_or(0), addr))
             .unwrap();
-        self.wait_time.start();
     }
 
     pub fn update_state_sizes(&mut self) {
@@ -2651,11 +2669,13 @@ impl Domain {
 
     pub fn on_event(
         &mut self,
-        executor: &mut Executor,
+        executor: &mut dyn Executor,
         event: PollEvent,
         sends: &mut EnqueuedSends,
     ) -> ProcessResult {
-        self.wait_time.stop();
+        if self.wait_time.is_running() {
+            self.wait_time.stop();
+        }
         //self.total_time.start();
         //self.total_ptime.start();
         let res = match event {
@@ -2717,14 +2737,16 @@ impl Domain {
                     self.handle(m, sends, executor, true);
                 }
 
-                if self.has_buffered_replay_requests || !self.timed_purges.is_empty() {
+                if !self.buffered_replay_requests.is_empty() || !self.timed_purges.is_empty() {
                     self.handle(box Packet::Spin, sends, executor, true);
                 }
 
                 ProcessResult::Processed
             }
         };
-        self.wait_time.start();
+        if !self.wait_time.is_running() {
+            self.wait_time.start();
+        }
         res
     }
 }

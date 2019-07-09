@@ -17,7 +17,7 @@ use noria::debug::stats::{DomainStats, GraphStats, NodeStats};
 use noria::ActivationResult;
 use petgraph::visit::Bfs;
 use slog::Logger;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::mem;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -47,6 +47,7 @@ pub(super) struct ControllerInner {
     recipe: Recipe,
 
     pub(super) domains: HashMap<DomainIndex, DomainHandle>,
+    pub(in crate::controller) domain_nodes: HashMap<DomainIndex, Vec<NodeIndex>>,
     pub(super) channel_coordinator: Arc<ChannelCoordinator>,
     pub(super) debug_channel: Option<SocketAddr>,
 
@@ -181,6 +182,24 @@ pub(super) fn graphviz(
 }
 
 impl ControllerInner {
+    pub(in crate::controller) fn topo_order(&self, new: &HashSet<NodeIndex>) -> Vec<NodeIndex> {
+        let mut topo_list = Vec::with_capacity(new.len());
+        let mut topo = petgraph::visit::Topo::new(&self.ingredients);
+        while let Some(node) = topo.next(&self.ingredients) {
+            if node == self.source {
+                continue;
+            }
+            if self.ingredients[node].is_dropped() {
+                continue;
+            }
+            if !new.contains(&node) {
+                continue;
+            }
+            topo_list.push(node);
+        }
+        topo_list
+    }
+
     pub(super) fn external_request<A: Authority + 'static>(
         &mut self,
         method: hyper::Method,
@@ -201,7 +220,7 @@ impl ControllerInner {
                 return Ok(Ok(json::to_string(&self.graphviz(true)).unwrap()));
             }
             (&Method::GET, "/get_statistics") => {
-                return Ok(Ok(format!("{:#?}", self.get_statistics())));
+                return Ok(Ok(json::to_string(&self.get_statistics()).unwrap()));
             }
             (&Method::POST, "/get_statistics") => {
                 return Ok(Ok(json::to_string(&self.get_statistics()).unwrap()));
@@ -452,6 +471,7 @@ impl ControllerInner {
             log,
 
             domains: Default::default(),
+            domain_nodes: Default::default(),
             channel_coordinator: cc,
             debug_channel: None,
             epoch: state.epoch,
@@ -732,25 +752,23 @@ impl ControllerInner {
             .collect()
     }
 
-    fn find_view_for(&self, node: NodeIndex) -> Option<NodeIndex> {
+    fn find_view_for(&self, node: NodeIndex, name: &str) -> Option<NodeIndex> {
         // reader should be a child of the given node. however, due to sharding, it may not be an
         // *immediate* child. furthermore, once we go beyond depth 1, we may accidentally hit an
         // *unrelated* reader node. to account for this, readers keep track of what node they are
         // "for", and we simply search for the appropriate reader by that metric. since we know
         // that the reader must be relatively close, a BFS search is the way to go.
         let mut bfs = Bfs::new(&self.ingredients, node);
-        let mut reader = None;
         while let Some(child) = bfs.next(&self.ingredients) {
             if self.ingredients[child]
                 .with_reader(|r| r.is_for() == node)
                 .unwrap_or(false)
+                && self.ingredients[child].name() == name
             {
-                reader = Some(child);
-                break;
+                return Some(child);
             }
         }
-
-        reader
+        None
     }
 
     /// Obtain a `ViewBuilder` that can be sent to a client and then used to query a given
@@ -767,7 +785,7 @@ impl ControllerInner {
             }
         };
 
-        self.find_view_for(node).map(|r| {
+        self.find_view_for(node, name).map(|r| {
             let domain = self.ingredients[r].domain();
             let columns = self.ingredients[r].fields().to_vec();
             let schema = self.view_schema(r);

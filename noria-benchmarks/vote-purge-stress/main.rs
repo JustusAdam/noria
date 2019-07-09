@@ -94,10 +94,9 @@ fn main() {
         .block_on(
             builder
                 .start_local()
-                .map(move |wh| SyncHandle::from_executor(ex, wh))
-                .and_then(move |mut graph| {
-                    graph.handle().install_recipe(RECIPE).map(move |_| graph)
-                }),
+                .and_then(|wh| wh.ready())
+                .and_then(|mut wh| wh.install_recipe(RECIPE).map(move |_| wh))
+                .map(move |wh| SyncHandle::from_executor(ex, wh)),
         )
         .unwrap();
 
@@ -140,6 +139,8 @@ fn main() {
             r.lookup(&[id.into()], true).unwrap();
             stats.saturating_record(start.elapsed().as_micros() as u64);
             n += 1;
+            // ensure that entry gets evicted
+            std::thread::sleep(Duration::from_millis(50));
         }
     }
 

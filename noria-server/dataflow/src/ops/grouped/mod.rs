@@ -55,7 +55,7 @@ pub trait GroupedOperation: fmt::Debug + Clone {
     fn apply(
         &self,
         current: Option<&DataType>,
-        diffs: &mut Iterator<Item = Self::Diff>,
+        diffs: &mut dyn Iterator<Item = Self::Diff>,
     ) -> DataType;
 
     fn description(&self, detailed: bool) -> String;
@@ -96,26 +96,19 @@ impl<T: GroupedOperation> GroupedOperator<T> {
     }
 }
 
+/// Extract a copy of all values in the record being targeted by the group
 fn get_group_values(group_by: &[usize], row: &Record) -> Vec<DataType> {
-
+    // This attribute is only here, because `is_sorted` is unstable. I didn't
+    // want to add a `feature` to the crate for a debug assertion thus I guarded
+    // both the `feature` and this assertion are with `cfg(debug)` (see also
+    // `lib.rs`)
+    #[cfg(debug)]
+    debug_assert!(group_by.is_sorted());
     let mut group = Vec::with_capacity(group_by.len() + 1);
-    {
-        let mut group_by_i = 0;
-        for (col, v) in row.iter().enumerate() {
-            if col == group_by[group_by_i] {
-                group.push(v.clone());
-                group_by_i += 1;
-                if group_by_i == group_by.len() {
-                    break;
-                }
-            }
-        }
-
-        // // Question: Isn't this the same?
-        // for (row_idx, group_idx) in group_by.iter().enumerate() {
-        //     group[*group_idx] = row[row_idx].clone()
-        // }
+    for &group_idx in group_by {
+        group.push(row[group_idx].clone())
     }
+    debug_assert_eq!(group.len(), group_by.len());
     group
 }
 
@@ -166,7 +159,7 @@ where
 
     fn on_input(
         &mut self,
-        _: &mut Executor,
+        _: &mut dyn Executor,
         from: LocalNodeIndex,
         rs: Records,
         _: &mut Tracer,

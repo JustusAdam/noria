@@ -1380,6 +1380,7 @@ impl SqlToMirConverter {
             }
             NegationOp(_) => unreachable!("negation should have been removed earlier"),
             Base(_) => unreachable!("dangling base predicate"),
+            Arithmetic(_) => unimplemented!(),
         }
 
         pred_nodes
