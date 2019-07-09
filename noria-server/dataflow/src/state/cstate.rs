@@ -1,5 +1,5 @@
 use prelude::*;
-use rand::{Rng, ThreadRng};
+use rand::prelude::{Rng, ThreadRng};
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -18,6 +18,15 @@ struct Memoization<T> {
 impl<T> Memoization<T> {
     fn value<'a>(&'a self) -> &'a Row {
         &self.memoization.as_ref().unwrap()
+    }
+}
+
+impl <T:Default> Default for Memoization<T> {
+    fn default() -> Self {
+        Memoization {
+            computer: Default::default(),
+            memoization: Option::None,
+        }
     }
 }
 
@@ -115,10 +124,10 @@ impl<T> StateElement<T> {
         self.partial
     }
 
-    fn values<'a>(&'a self) -> Box<Iterator<Item = &'a MemoElem<T>> + 'a> {
+    fn values<'a>(&'a self) -> Box<dyn Iterator<Item = &'a MemoElem<T>> + 'a> {
         fn val_helper<'a, K: Eq + Hash, V, H: BuildHasher>(
             map: &'a rahashmap::HashMap<K, Option<V>, H>,
-        ) -> Box<Iterator<Item = &'a V> + 'a> {
+        ) -> Box<dyn Iterator<Item = &'a V> + 'a> {
             Box::new(map.values().flat_map(Option::iter))
         }
         match self.state {
@@ -199,6 +208,13 @@ impl<T> StateElement<T> {
         self.state.lookup(&key_type_from_row(&self.key, row))
     }
 
+    fn lookup_memoizer_mut<'a>(&'a mut self, key: &KeyType) -> Option<&'a mut Option<Memoization<T>>>
+    where
+        T: std::fmt::Debug
+    {
+        self.state.lookup_mut(key).map(|o| &mut o.map(|r| *r.0))
+    }
+
     fn evict_keys(&mut self, keys: &[Vec<DataType>]) -> u64
     where
         T: SizeOf,
@@ -227,6 +243,18 @@ impl <T> MemoizedComputableState<T> {
             by_tag: HashMap::default(),
             mem_size: 0,
         }
+    }
+    fn lookup_memoizer_mut<'a>(&'a mut self, columns: &[usize], key: &KeyType) -> Option<&'a mut Option<Memoization<T>>>
+    where
+        T: std::fmt::Debug
+    {
+        let index = self
+            .state_for(columns)
+            .expect("lookup on non-indexed column set");
+        self.state[index].lookup_memoizer_mut(key)
+    }
+    fn state_for(&self, cols: &[usize]) -> Option<usize> {
+        self.state.iter().position(|s| s.key() == cols)
     }
 }
 
@@ -365,9 +393,6 @@ impl super::State for ClickAnaState {
 }
 
 impl ClickAnaState {
-    fn state_for(&self, cols: &[usize]) -> Option<usize> {
-        self.state.iter().position(|s| s.key() == cols)
-    }
 
     fn is_contained(&self, row: &[DataType]) -> bool {
         self.state.iter().any(|s| s.is_contained(row))
@@ -392,4 +417,5 @@ impl ClickAnaState {
             Option::None
         }
     }
+
 }

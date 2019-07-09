@@ -61,6 +61,135 @@ impl ClickAna {
             colfix: Vec::new(),
         }
     }
+
+    fn on_input_mut(
+        &mut self,
+        from: LocalNodeIndex,
+        rs: Records,
+        replay_key_cols: &Option<&[usize]>,
+        state: &mut StateMap,
+    ) -> ProcessingResult {
+
+        debug_assert_eq!(from, *self.src);
+
+        let concat = self.concat;
+
+        if rs.is_empty() {
+            return ProcessingResult {
+                results: rs,
+                ..Default::default()
+            };
+        }
+
+        let group_by = &self.group_by;
+        // Are the columns equal that we group over
+        let cmp = |a: &Record, b: &Record| {
+            group_by
+                .iter()
+                .map(|&col| &a[col])
+                .cmp(group_by.iter().map(|&col| &b[col]))
+        };
+
+        // First, we want to be smart about multiple added/removed rows with same group.
+        // For example, if we get a -, then a +, for the same group, we don't want to
+        // execute two queries. We'll do this by sorting the batch by our group by.
+        let mut rs: Vec<_> = rs.into();
+        rs.sort_by(&cmp);
+
+        // find the current value for this group
+        let us = self.local_index.unwrap();
+        let db = state
+            .get(*us)
+            .expect("grouped operators must have their own state materialized")
+            .as_click_ana_state()
+            .unwrap();
+
+        let mut misses = Vec::new();
+        let mut lookups = Vec::new();
+        let mut out = Vec::new();
+        {
+            let out_key = &self.out_key;
+            let mut handle_group =
+                |group_rs: ::std::vec::Drain<Record>, mut diffs: ::std::vec::Drain<_>| {
+                    let mut group_rs = group_rs.peekable();
+
+                    // Retrieve the values for this group
+                    let group = get_group_values(group_by, group_rs.peek().unwrap());
+
+                    let mut m = {
+                        if let mut Option::Some(o) = db.lookup_memoizer_mut(&out_key[..], &KeyType::from(&group[..])) {
+                            if replay_key_cols.is_some() {
+                                lookups.push(Lookup {
+                                    on: *us,
+                                    cols: out_key.clone(),
+                                    key: group.clone(),
+                                });
+                            };
+                            if !o.is_some() {
+                                o.replace(Memoization::default())
+                            };
+                            o.as_ref().unwrap()
+                        } else {
+                            misses.extend(group_rs.map(|r| Miss {
+                                on: *us,
+                                lookup_idx: out_key.clone(),
+                                lookup_cols: group_by.clone(),
+                                replay_cols: replay_key_cols.map(Vec::from),
+                                record: r.extract().0,
+                            }));
+                            return;
+                        }
+                    };
+
+                    m.apply(diffs);
+                    let new = concat(m);
+
+                    match m.memoization {
+                        Some(ref old) if new == **current => {
+                            return;
+                        }
+                    }
+
+                    if let Option::Some(old) = m.memoization.replace()
+                        _ => {
+                            if let Some(old) = old {
+                                // revoke old value
+                                debug_assert!(current.is_some());
+                                out.push(Record::Negative(old.into_owned()));
+                            }
+
+                            // emit positive, which is group + new.
+                            let mut rec = group;
+                            rec.push(new);
+                            out.push(Record::Positive(rec));
+                        }
+                    }
+                };
+
+            let mut diffs = Vec::new();
+            let mut group_rs = Vec::new();
+            for r in rs {
+                // This essentially is
+                // rs.chunk_by(group_is_equal(self.group_by)).map(|chunk| {
+                //     handle_group(chunk.map(self.inner.to_diff(...)))
+                // })
+                if !group_rs.is_empty() && cmp(&group_rs[0], &r) != Ordering::Equal {
+                    handle_group(&mut self.inner, group_rs.drain(..), diffs.drain(..));
+                }
+
+                diffs.push(self.inner.to_diff(&r[..], r.is_positive()));
+                group_rs.push(r);
+            }
+            assert!(!diffs.is_empty());
+            handle_group(&mut self.inner, group_rs.drain(..), diffs.drain(..));
+        }
+
+        ProcessingResult {
+            results: out.into(),
+            lookups,
+            misses,
+        }
+    }
 }
 
 impl Ingredient for ClickAna {
@@ -121,143 +250,7 @@ impl Ingredient for ClickAna {
         _: &DomainNodes,
         state: &mut StateMap,
     ) -> RawProcessingResult {
-        unimplemented!();
-        // debug_assert_eq!(from, *self.src);
-
-        // if rs.is_empty() {
-        //     return ProcessingResult {
-        //         results: rs,
-        //         ..Default::default()
-        //     };
-        // }
-
-        // let group_by = &self.group_by;
-        // // Are the columns equal that we group over
-        // let cmp = |a: &Record, b: &Record| {
-        //     group_by
-        //         .iter()
-        //         .map(|&col| &a[col])
-        //         .cmp(group_by.iter().map(|&col| &b[col]))
-        // };
-
-        // // First, we want to be smart about multiple added/removed rows with same group.
-        // // For example, if we get a -, then a +, for the same group, we don't want to
-        // // execute two queries. We'll do this by sorting the batch by our group by.
-        // let mut rs: Vec<_> = rs.into();
-        // rs.sort_by(&cmp);
-
-        // // find the current value for this group
-        let us = self.local_index.unwrap();
-        let db = state
-            .get(*us)
-            .expect("grouped operators must have their own state materialized")
-            .as_click_ana_state()
-            .unwrap();
-
-        // let mut misses = Vec::new();
-        // let mut lookups = Vec::new();
-        // let mut out = Vec::new();
-        // {
-        //     let out_key = &self.out_key;
-        //     let mut handle_group =
-        //         |group_rs: ::std::vec::Drain<Record>, mut diffs: ::std::vec::Drain<_>| {
-        //             let mut group_rs = group_rs.peekable();
-
-        //             // Retrieve the values for this group
-        //             let mut group = Vec::with_capacity(group_by.len() + 1);
-        //             {
-        //                 let group_r = group_rs.peek().unwrap();
-        //                 let mut group_by_i = 0;
-        //                 for (col, v) in group_r.iter().enumerate() {
-        //                     if col == group_by[group_by_i] {
-        //                         group.push(v.clone());
-        //                         group_by_i += 1;
-        //                         if group_by_i == group_by.len() {
-        //                             break;
-        //                         }
-        //                     }
-        //                 }
-        //             }
-
-        //             let rs = {
-        //                 match db.lookup(&out_key[..], &KeyType::from(&group[..])) {
-        //                     LookupResult::Some(rs) => {
-        //                         if replay_key_cols.is_some() {
-        //                             lookups.push(Lookup {
-        //                                 on: *us,
-        //                                 cols: out_key.clone(),
-        //                                 key: group.clone(),
-        //                             });
-        //                         }
-
-        //                         debug_assert!(rs.len() <= 1, "a group had more than 1 result");
-        //                         rs
-        //                     }
-        //                     LookupResult::Missing => {
-        //                         misses.extend(group_rs.map(|r| Miss {
-        //                             on: *us,
-        //                             lookup_idx: out_key.clone(),
-        //                             lookup_cols: group_by.clone(),
-        //                             replay_cols: replay_key_cols.map(Vec::from),
-        //                             record: r.extract().0,
-        //                         }));
-        //                         return;
-        //                     }
-        //                 }
-        //             };
-
-        //             let old = rs.into_iter().next();
-        //             // current value is in the last output column
-        //             // or "" if there is no current group
-        //             let current = old.as_ref().map(|rows| match rows {
-        //                 Cow::Borrowed(rs) => Cow::Borrowed(&rs[rs.len() - 1]),
-        //                 Cow::Owned(rs) => Cow::Owned(rs[rs.len() - 1].clone()),
-        //             });
-
-        //             // new is the result of applying all diffs for the group to the current value
-        //             let new = inner.apply(current.as_ref().map(|v| &**v), &mut diffs as &mut _);
-        //             match current {
-        //                 Some(ref current) if new == **current => {
-        //                     // no change
-        //                 }
-        //                 _ => {
-        //                     if let Some(old) = old {
-        //                         // revoke old value
-        //                         debug_assert!(current.is_some());
-        //                         out.push(Record::Negative(old.into_owned()));
-        //                     }
-
-        //                     // emit positive, which is group + new.
-        //                     let mut rec = group;
-        //                     rec.push(new);
-        //                     out.push(Record::Positive(rec));
-        //                 }
-        //             }
-        //         };
-
-        //     let mut diffs = Vec::new();
-        //     let mut group_rs = Vec::new();
-        //     for r in rs {
-        //         // This essentially is
-        //         // rs.chunk_by(group_is_equal(self.group_by)).map(|chunk| {
-        //         //     handle_group(chunk.map(self.inner.to_diff(...)))
-        //         // })
-        //         if !group_rs.is_empty() && cmp(&group_rs[0], &r) != Ordering::Equal {
-        //             handle_group(&mut self.inner, group_rs.drain(..), diffs.drain(..));
-        //         }
-
-        //         diffs.push(self.inner.to_diff(&r[..], r.is_positive()));
-        //         group_rs.push(r);
-        //     }
-        //     assert!(!diffs.is_empty());
-        //     handle_group(&mut self.inner, group_rs.drain(..), diffs.drain(..));
-        // }
-
-        // ProcessingResult {
-        //     results: out.into(),
-        //     lookups,
-        //     misses,
-        // }
+        RawProcessingResult::Regular(self.on_input_mut(from, data, replay_key_cols.key(), state))
     }
 
     fn suggest_indexes(&self, this: NodeIndex) -> HashMap<NodeIndex, Vec<usize>> {

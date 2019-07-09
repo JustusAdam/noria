@@ -55,6 +55,40 @@ impl<T> KeyedState<T> {
         }
     }
 
+    pub(super) fn lookup_mut<'a>(&'a mut self, key: &KeyType) -> Option<&'a mut T>
+    where
+        T: std::fmt::Debug,
+    {
+        match (self, key) {
+            (&mut KeyedState::Single(ref m), &KeyType::Single(k)) => m.get_mut(k),
+            (&mut KeyedState::Double(ref m), &KeyType::Double(ref k)) => m.get_mut(k),
+            (&mut KeyedState::Tri(ref m), &KeyType::Tri(ref k)) => m.get_mut(k),
+            (&mut KeyedState::Quad(ref m), &KeyType::Quad(ref k)) => m.get_mut(k),
+            (&mut KeyedState::Quin(ref m), &KeyType::Quin(ref k)) => m.get_mut(k),
+            (&mut KeyedState::Sex(ref m), &KeyType::Sex(ref k)) => m.get_mut(k),
+            (st, kt) => panic!("State: {:?}, key: {:?}", st, kt),
+            (st, kt) => panic!(
+                "Stat: {}, key: {}",
+                match *st {
+                    KeyedState::Single(_) => 1,
+                    KeyedState::Double(_) => 2,
+                    KeyedState::Tri(_) => 3,
+                    KeyedState::Quad(_) => 4,
+                    KeyedState::Quin(_) => 5,
+                    KeyedState::Sex(_) => 6,
+                },
+                match *kt {
+                    KeyType::Single(_) => 1,
+                    KeyType::Double(_) => 2,
+                    KeyType::Tri(_) => 3,
+                    KeyType::Quad(_) => 4,
+                    KeyType::Quin(_) => 5,
+                    KeyType::Sex(_) => 6,
+                }
+            ),
+        }
+    }
+
     /// Remove all rows for the first key at or after `index`, returning that key along with the
     /// number of bytes freed. Returns None if already empty.
     pub(super) fn evict_at_index(&mut self, index: usize) -> Option<(u64, Vec<DataType>)>
