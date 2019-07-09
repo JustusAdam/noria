@@ -1,8 +1,6 @@
 use rand::{Rng, ThreadRng};
-use std::rc::Rc;
 
 use super::mk_key::MakeKey;
-use common::SizeOf;
 use prelude::*;
 use state::keyed_state::KeyedState;
 
@@ -111,82 +109,16 @@ impl SingleState {
     }
 
     pub(super) fn mark_filled(&mut self, key: Vec<DataType>) {
-        let mut key = key.into_iter();
-        let replaced = match self.state {
-            KeyedState::Single(ref mut map) => map.insert(key.next().unwrap(), Vec::new()),
-            KeyedState::Double(ref mut map) => {
-                map.insert((key.next().unwrap(), key.next().unwrap()), Vec::new())
-            }
-            KeyedState::Tri(ref mut map) => map.insert(
-                (
-                    key.next().unwrap(),
-                    key.next().unwrap(),
-                    key.next().unwrap(),
-                ),
-                Vec::new(),
-            ),
-            KeyedState::Quad(ref mut map) => map.insert(
-                (
-                    key.next().unwrap(),
-                    key.next().unwrap(),
-                    key.next().unwrap(),
-                    key.next().unwrap(),
-                ),
-                Vec::new(),
-            ),
-            KeyedState::Quin(ref mut map) => map.insert(
-                (
-                    key.next().unwrap(),
-                    key.next().unwrap(),
-                    key.next().unwrap(),
-                    key.next().unwrap(),
-                    key.next().unwrap(),
-                ),
-                Vec::new(),
-            ),
-            KeyedState::Sex(ref mut map) => map.insert(
-                (
-                    key.next().unwrap(),
-                    key.next().unwrap(),
-                    key.next().unwrap(),
-                    key.next().unwrap(),
-                    key.next().unwrap(),
-                    key.next().unwrap(),
-                ),
-                Vec::new(),
-            ),
-        };
-        assert!(replaced.is_none());
+        self.state.mark_filled(key, Vec::new())
     }
 
     pub(super) fn mark_hole(&mut self, key: &[DataType]) -> u64 {
-        let removed = match self.state {
-            KeyedState::Single(ref mut map) => map.remove(&key[0]),
-            KeyedState::Double(ref mut map) => map.remove(&MakeKey::from_key(key)),
-            KeyedState::Tri(ref mut map) => map.remove(&MakeKey::from_key(key)),
-            KeyedState::Quad(ref mut map) => map.remove(&MakeKey::from_key(key)),
-            KeyedState::Quin(ref mut map) => map.remove(&MakeKey::from_key(key)),
-            KeyedState::Sex(ref mut map) => map.remove(&MakeKey::from_key(key)),
-        };
-        // mark_hole should only be called on keys we called mark_filled on
-        removed
-            .unwrap()
-            .iter()
-            .filter(|r| Rc::strong_count(&r.0) == 1)
-            .map(SizeOf::deep_size_of)
-            .sum()
+        self.state.mark_hole(key)
     }
 
     pub(super) fn clear(&mut self) {
         self.rows = 0;
-        match self.state {
-            KeyedState::Single(ref mut map) => map.clear(),
-            KeyedState::Double(ref mut map) => map.clear(),
-            KeyedState::Tri(ref mut map) => map.clear(),
-            KeyedState::Quad(ref mut map) => map.clear(),
-            KeyedState::Quin(ref mut map) => map.clear(),
-            KeyedState::Sex(ref mut map) => map.clear(),
-        };
+        self.state.clear()
     }
 
     /// Evict `count` randomly selected keys from state and return them along with the number of
@@ -196,17 +128,7 @@ impl SingleState {
         count: usize,
         rng: &mut ThreadRng,
     ) -> (u64, Vec<Vec<DataType>>) {
-        let mut bytes_freed = 0;
-        let mut keys = Vec::with_capacity(count);
-        for _ in 0..count {
-            if let Some((n, key)) = self.state.evict_at_index(rng.gen()) {
-                bytes_freed += n;
-                keys.push(key);
-            } else {
-                break;
-            }
-        }
-        (bytes_freed, keys)
+        self.state.evict_random_keys(count, rng)
     }
 
     /// Evicts a specified key from this state, returning the number of bytes freed.

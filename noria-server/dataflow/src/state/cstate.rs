@@ -1,11 +1,13 @@
-
-use std::rc::Rc;
 use prelude::*;
+use rand::{Rng, ThreadRng};
+use std::collections::HashMap;
+use std::rc::Rc;
 
-/// A memoized computable state
-use super::keyed_state::*;
 use super::click_ana::ClickAnaState;
+use super::keyed_state::*;
+use super::mk_key::{ MakeKey, key_type_from_row };
 
+#[derive(Debug)]
 struct Memoization<T> {
     computer: T,
     // Because, for the time being, I only expect to use this for grouping UDF's
@@ -13,13 +15,86 @@ struct Memoization<T> {
     memoization: Option<Row>,
 }
 
+impl<T> Memoization<T> {
+    fn value<'a>(&'a self) -> &'a Row {
+        &self.memoization.as_ref().unwrap()
+    }
+}
+
+use std::ops::Index;
+
+impl<T> Index<usize> for Memoization<T> {
+    type Output = DataType;
+    fn index(&self, index: usize) -> &DataType {
+        self.value().index(index)
+    }
+}
+
+#[derive(Debug)]
+struct MemoElem<T>(Rc<Memoization<T>>);
+
+impl<T> MemoElem<T> {
+    fn value<'a>(&'a self) -> &'a Row {
+        self.0.value()
+    }
+}
+
+impl<T> Clone for MemoElem<T> {
+    fn clone(&self) -> Self {
+        MemoElem(self.0.clone())
+    }
+}
+
+// Same assumptions as with `Row` apply here
+unsafe impl<T> Send for MemoElem<T> {}
+unsafe impl<T> Sync for MemoElem<T> {}
+
+impl<T: SizeOf> SizeOf for Memoization<T> {
+    fn size_of(&self) -> u64 {
+        unimplemented!()
+    }
+
+    fn deep_size_of(&self) -> u64 {
+        unimplemented!()
+    }
+}
+
+impl<T: SizeOf> DeallocSize for MemoElem<T> {
+    fn dealloc_size(&self) -> u64 {
+        if Rc::strong_count(&self.0) == 1 {
+            self.0.deep_size_of()
+        } else {
+            0
+        }
+    }
+}
+
 struct StateElement<T> {
-    state: KeyedState<Rc<Memoization<T>>>,
+    state: KeyedState<Option<MemoElem<T>>>,
     key: Vec<usize>,
     partial: bool,
 }
 
-impl <T> StateElement<T> {
+macro_rules! insert_row_match_impl {
+    ($self:ident, $r:ident, $map:ident) => {{
+        let key = MakeKey::from_row(&$self.key, $r.0.value());
+        match $map.entry(key) {
+            Entry::Occupied(mut rs) => {
+                let res = rs.get_mut().replace($r);
+                debug_assert!(res.is_none(), "Key already exists");
+            }
+            Entry::Vacant(..) if $self.partial => return false,
+            rs @ Entry::Vacant(..) => {
+                let res = rs.or_default().replace($r);
+                debug_assert!(res.is_none(), "How could this happen?");
+            }
+        }
+    }};
+}
+
+use std::hash::{BuildHasher, Hash};
+
+impl<T> StateElement<T> {
     fn new(columns: &[usize], partial: bool) -> Self {
         Self {
             key: Vec::from(columns),
@@ -27,16 +102,137 @@ impl <T> StateElement<T> {
             partial,
         }
     }
+
+    fn rows(&self) -> usize {
+        unimplemented!()
+    }
+
+    fn key<'a>(&'a self) -> &'a [usize] {
+        &self.key
+    }
+
+    fn partial(&self) -> bool {
+        self.partial
+    }
+
+    fn values<'a>(&'a self) -> Box<Iterator<Item = &'a MemoElem<T>> + 'a> {
+        fn val_helper<'a, K: Eq + Hash, V, H: BuildHasher>(
+            map: &'a rahashmap::HashMap<K, Option<V>, H>,
+        ) -> Box<Iterator<Item = &'a V> + 'a> {
+            Box::new(map.values().flat_map(Option::iter))
+        }
+        match self.state {
+            KeyedState::Single(ref map) => val_helper(map),
+            KeyedState::Double(ref map) => val_helper(map),
+            KeyedState::Tri(ref map) => val_helper(map),
+            KeyedState::Quad(ref map) => val_helper(map),
+            KeyedState::Quin(ref map) => val_helper(map),
+            KeyedState::Sex(ref map) => val_helper(map),
+        }
+    }
+
+    fn insert(&mut self, e: MemoElem<T>) -> bool {
+        use rahashmap::Entry;
+        match self.state {
+            KeyedState::Single(ref mut map) => {
+                // treat this specially to avoid the extra Vec
+                debug_assert_eq!(self.key.len(), 1);
+                // i *wish* we could use the entry API here, but it would mean an extra clone
+                // in the common case of an entry already existing for the given key...
+                if let Some(ref mut rs) = map.get_mut(&e.value()[self.key[0]]) {
+                    unimplemented!("Can this occur?");
+                } else if self.partial {
+                    // trying to insert a record into partial materialization hole!
+                    return false;
+                }
+                map.insert(e.0[self.key[0]].clone(), Option::Some(e));
+            }
+            KeyedState::Double(ref mut map) => insert_row_match_impl!(self, e, map),
+            KeyedState::Tri(ref mut map) => insert_row_match_impl!(self, e, map),
+            KeyedState::Quad(ref mut map) => insert_row_match_impl!(self, e, map),
+            KeyedState::Quin(ref mut map) => insert_row_match_impl!(self, e, map),
+            KeyedState::Sex(ref mut map) => insert_row_match_impl!(self, e, map),
+        }
+        true
+    }
+
+    fn clear(&mut self) {
+        self.state.clear()
+    }
+
+    fn is_contained(&self, key: &[DataType]) -> bool {
+        self.values()
+            .any(|v| v.0.memoization.as_ref().map_or(false, |d| **d == key))
+    }
+
+    fn mark_hole(&mut self, key: &[DataType]) -> u64
+    where
+        T: SizeOf,
+    {
+        self.state.mark_hole(key)
+    }
+
+    fn mark_filled(&mut self, key: Vec<DataType>) {
+        self.state.mark_filled(key, Option::None)
+    }
+
+    pub(super) fn lookup<'a>(&'a self, key: &KeyType) -> LookupResult<'a>
+    where
+        T: std::fmt::Debug,
+    {
+        if let Some(rs) = self.state.lookup(key) {
+            LookupResult::Some(RecordResult::Borrowed(std::slice::from_ref(
+                rs.as_ref().unwrap().value(),
+            )))
+        } else if self.partial() {
+            // partially materialized, so this is a hole (empty results would be vec![])
+            LookupResult::Missing
+        } else {
+            LookupResult::Some(RecordResult::Owned(vec![]))
+        }
+    }
+
+    fn lookup_row<'a>(&'a self, row: &[DataType]) -> Option<&'a Option<MemoElem<T>>>
+    where
+        T: std::fmt::Debug
+    {
+        self.state.lookup(&key_type_from_row(&self.key, row))
+    }
+
+    fn evict_keys(&mut self, keys: &[Vec<DataType>]) -> u64
+    where
+        T: SizeOf,
+    {
+        keys.iter().map(|k| self.state.evict(k)).sum()
+    }
+
+    fn evict_random_keys(&mut self, count: usize, rng: &mut ThreadRng) -> (u64, Vec<Vec<DataType>>)
+    where
+        T: SizeOf,
+    {
+        self.state.evict_random_keys(count, rng)
+    }
 }
 
 pub struct MemoizedComputableState<T> {
-    states: Vec<StateElement<T>>,
+    state: Vec<StateElement<T>>,
+    by_tag: HashMap<Tag, usize>,
     mem_size: u64,
 }
 
-impl <T: SizeOf> SizeOf for MemoizedComputableState<T> {
+impl <T> MemoizedComputableState<T> {
+    pub fn new() -> Self {
+        MemoizedComputableState {
+            state: Vec::new(),
+            by_tag: HashMap::default(),
+            mem_size: 0,
+        }
+    }
+}
+
+impl<T: SizeOf> SizeOf for MemoizedComputableState<T> {
     fn size_of(&self) -> u64 {
-        unimplemented!()
+        std::mem::size_of::<Self>() as u64
     }
     fn deep_size_of(&self) -> u64 {
         self.mem_size
@@ -47,7 +243,7 @@ impl super::State for ClickAnaState {
     fn add_key(&mut self, columns: &[usize], partial: Option<Vec<Tag>>) {
         let (i, exists) = if let Some(i) = self.state_for(columns) {
             // already keyed by this key; just adding tags
-                (i, true)
+            (i, true)
         } else {
             // will eventually be assigned
             (self.state.len(), false)
@@ -73,37 +269,33 @@ impl super::State for ClickAnaState {
             if !old.is_empty() {
                 assert!(!old[0].partial());
                 for r in old[0].values() {
-                    new.insert_row(r.clone());
+                    new.insert((*r).clone());
                 }
             }
         }
     }
     fn is_useful(&self) -> bool {
-        !self.states.is_empty()
+        !self.state.is_empty()
     }
     fn is_partial(&self) -> bool {
-        self.states.iter().any(StateElement::partial)
+        self.state.iter().any(StateElement::partial)
     }
+    /// Because in this state type I'm mostly circumventing the standard state
+    /// interface this function doesn't actually insert records but only ensures
+    /// that the processing node the processing in the node was proper.
     fn process_records(&mut self, records: &mut Records, partial_tag: Option<Tag>) {
         if self.is_partial() {
             records.retain(|r| {
-                // we need to check that we're not erroneously filling any holes
-                // there are two cases here:
-                //
-                //  - if the incoming record is a partial replay (i.e., partial.is_some()), then we
-                //    *know* that we are the target of the replay, and therefore we *know* that the
-                //    materialization must already have marked the given key as "not a hole".
-                //  - if the incoming record is a normal message (i.e., partial.is_none()), then we
-                //    need to be careful. since this materialization is partial, it may be that we
-                //    haven't yet replayed this `r`'s key, in which case we shouldn't forward that
-                //    record! if all of our indices have holes for this record, there's no need for us
-                //    to forward it. it would just be wasted work.
-                //
-                //    XXX: we could potentially save come computation here in joins by not forcing
-                //    `right` to backfill the lookup key only to then throw the record away
                 match *r {
-                    Record::Positive(ref r) => unimplemented!(),
-                    Record::Negative(ref r) => unimplemented!(),
+                    Record::Positive(ref r) => self
+                        .record_save_state(r)
+                        .expect("There should have been a key for this!"),
+                    Record::Negative(ref r) => {
+                        // I'm panicking here, but it may be okay for the key to
+                        // be missing, not sure.
+                        self.record_save_state(r)
+                            .expect("I think this key might have to exist.")
+                    }
                 }
             });
         } else {
@@ -111,12 +303,8 @@ impl super::State for ClickAnaState {
                 // This should have been handled by the operator, so I only do
                 // some checking that the values line up
                 match *r {
-                    Record::Positive(ref r) => {
-                        debug_assert!(self.is_the_same(r))
-                    }
-                    Record::Negative(ref r) => {
-                        debug_assert!(self.isnt_contained(r))
-                    }
+                    Record::Positive(ref r) => debug_assert!(self.is_contained(r)),
+                    Record::Negative(ref r) => debug_assert!(!self.is_contained(r)),
                 }
             }
         }
@@ -142,15 +330,14 @@ impl super::State for ClickAnaState {
         self.state[index].lookup(key)
     }
     fn keys(&self) -> Vec<Vec<usize>> {
-        self.states.iter().map(|s| s.key().to_vec()).collect()
+        self.state.iter().map(|s| s.key().to_vec()).collect()
     }
     fn cloned_records(&self) -> Vec<Vec<DataType>> {
-        fn fix<'a>(rs: &'a Vec<Row>) -> impl Iterator<Item = Vec<DataType>> + 'a {
-            rs.iter().map(|r| Vec::clone(&**r))
-        }
-
         assert!(!self.state[0].partial());
-        self.state[0].values().flat_map(fix).collect()
+        self.state[0]
+            .values()
+            .map(|v| (**v.value()).clone())
+            .collect()
     }
     fn evict_random_keys(&mut self, count: usize) -> (&[usize], Vec<Vec<DataType>>, u64) {
         let mut rng = rand::thread_rng();
@@ -182,11 +369,27 @@ impl ClickAnaState {
         self.state.iter().position(|s| s.key() == cols)
     }
 
-    fn is_the_same(&self, row: &[DataType]) -> bool {
-        self.states.iter().all(|s| s.is_same_if_contained(row))
+    fn is_contained(&self, row: &[DataType]) -> bool {
+        self.state.iter().any(|s| s.is_contained(row))
     }
-
-    fn isnt_contained(&self, row: &[DataType]) -> bool {
-        unimplemented!()
+    /// Return how the provided row is stored. If the result is `Some`
+    /// there was a key matching the record found in the states. If additionally
+    /// the boolean is `true` there was also a value for that key found.
+    fn record_save_state(&self, r: &[DataType]) -> Option<bool> {
+        let mut material = false;
+        let mut exists = false;
+        for s in self.state.iter() {
+            s.lookup_row(r).map(|o| {
+                o.as_ref().map(|m| {
+                    exists = true;
+                    m.0.memoization.as_ref().map(|_| material = true)
+                })
+            });
+        }
+        if exists {
+            Option::Some(material)
+        } else {
+            Option::None
+        }
     }
 }

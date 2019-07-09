@@ -46,6 +46,7 @@ impl<A> FreeGroup<A> {
 pub type ClickAnaState = MemoizedComputableState<iseq::Seq<i32>>;
 
 pub mod iseq {
+    #[derive(Debug)]
     pub struct Seq<T>(Vec<Interval<T>>);
 
     use common::SizeOf;
@@ -59,6 +60,7 @@ pub mod iseq {
         }
     }
 
+    #[derive(Debug)]
     pub struct Interval<T> {
         lower_bound: Option<T>,
         upper_bound: Option<T>,

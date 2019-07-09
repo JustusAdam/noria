@@ -1,3 +1,5 @@
+use prelude::*;
+
 pub(super) trait MakeKey<A> {
     fn from_row(key: &[usize], row: &[A]) -> Self;
     fn from_key(key: &[A]) -> Self;
@@ -105,5 +107,34 @@ impl<A: Clone> MakeKey<A> for (A, A, A, A, A, A) {
             key[4].clone(),
             key[5].clone(),
         )
+    }
+}
+
+// I would love to also implement this with `MakeKey`, but the lifetime
+// requirement for `KeyType` wont let me :(
+#[inline(always)]
+pub fn key_type_from_row<'a>(key: &[usize], row: &'a[DataType]) -> KeyType<'a>
+{
+    match key.len() {
+        1 => KeyType::Single(&row[0]),
+        2 => KeyType::Double(MakeKey::from_row(key, row)),
+        3 => KeyType::Tri(MakeKey::from_row(key, row)),
+        4 => KeyType::Quad(MakeKey::from_row(key, row)),
+        5 => KeyType::Quin(MakeKey::from_row(key, row)),
+        6 => KeyType::Sex(MakeKey::from_row(key, row)),
+        s => panic!("No state key implemented for keys of size {}", s),
+    }
+}
+
+#[inline(always)]
+pub fn key_type_from_key<'a>(key: &'a [DataType]) -> KeyType<'a> {
+    match key.len() {
+        1 => KeyType::Single(&key[0]),
+        2 => KeyType::Double(MakeKey::from_key(key)),
+        3 => KeyType::Tri(MakeKey::from_key(key)),
+        4 => KeyType::Quad(MakeKey::from_key(key)),
+        5 => KeyType::Quin(MakeKey::from_key(key)),
+        6 => KeyType::Sex(MakeKey::from_key(key)),
+        s => panic!("No state key implemented for keys of size {}", s),
     }
 }

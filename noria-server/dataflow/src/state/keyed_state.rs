@@ -1,6 +1,7 @@
 use fnv::FnvBuildHasher;
 use rahashmap::HashMap as RaHashMap;
 use std::rc::Rc;
+use rand::{ThreadRng,Rng};
 
 use super::mk_key::MakeKey;
 use common::SizeOf;
@@ -97,6 +98,103 @@ impl<T> KeyedState<T> {
         .map(|r| r.dealloc_size())
         .unwrap_or(0)
     }
+
+    pub fn clear(&mut self) {
+        match self {
+            KeyedState::Single(ref mut map) => map.clear(),
+            KeyedState::Double(ref mut map) => map.clear(),
+            KeyedState::Tri(ref mut map) => map.clear(),
+            KeyedState::Quad(ref mut map) => map.clear(),
+            KeyedState::Quin(ref mut map) => map.clear(),
+            KeyedState::Sex(ref mut map) => map.clear(),
+        }
+    }
+
+    pub fn mark_filled(&mut self, key: Vec<DataType>, empty: T) {
+        let mut key = key.into_iter();
+        let replaced = match self {
+            KeyedState::Single(ref mut map) => map.insert(key.next().unwrap(), empty),
+            KeyedState::Double(ref mut map) => {
+                map.insert((key.next().unwrap(), key.next().unwrap()), empty)
+            }
+            KeyedState::Tri(ref mut map) => map.insert(
+                (
+                    key.next().unwrap(),
+                    key.next().unwrap(),
+                    key.next().unwrap(),
+                ),
+                empty,
+            ),
+            KeyedState::Quad(ref mut map) => map.insert(
+                (
+                    key.next().unwrap(),
+                    key.next().unwrap(),
+                    key.next().unwrap(),
+                    key.next().unwrap(),
+                ),
+                empty,
+            ),
+            KeyedState::Quin(ref mut map) => map.insert(
+                (
+                    key.next().unwrap(),
+                    key.next().unwrap(),
+                    key.next().unwrap(),
+                    key.next().unwrap(),
+                    key.next().unwrap(),
+                ),
+                empty,
+            ),
+            KeyedState::Sex(ref mut map) => map.insert(
+                (
+                    key.next().unwrap(),
+                    key.next().unwrap(),
+                    key.next().unwrap(),
+                    key.next().unwrap(),
+                    key.next().unwrap(),
+                    key.next().unwrap(),
+                ),
+                empty,
+            ),
+        };
+        assert!(replaced.is_none());
+    }
+
+    pub fn mark_hole(&mut self, key: &[DataType]) -> u64
+    where
+        T: DeallocSize
+    {
+        let removed = match self {
+            KeyedState::Single(ref mut map) => map.remove(&key[0]),
+            KeyedState::Double(ref mut map) => map.remove(&MakeKey::from_key(key)),
+            KeyedState::Tri(ref mut map) => map.remove(&MakeKey::from_key(key)),
+            KeyedState::Quad(ref mut map) => map.remove(&MakeKey::from_key(key)),
+            KeyedState::Quin(ref mut map) => map.remove(&MakeKey::from_key(key)),
+            KeyedState::Sex(ref mut map) => map.remove(&MakeKey::from_key(key)),
+        };
+        // mark_hole should only be called on keys we called mark_filled on
+        removed.expect("Hole marked twice").dealloc_size()
+    }
+
+    pub(super) fn evict_random_keys(
+        &mut self,
+        count: usize,
+        rng: &mut ThreadRng,
+    ) -> (u64, Vec<Vec<DataType>>)
+    where
+        T: DeallocSize
+    {
+        let mut bytes_freed = 0;
+        let mut keys = Vec::with_capacity(count);
+        for _ in 0..count {
+            if let Some((n, key)) = self.evict_at_index(rng.gen()) {
+                bytes_freed += n;
+                keys.push(key);
+            } else {
+                break;
+            }
+        }
+        (bytes_freed, keys)
+    }
 }
 
 /// Real number of bytes freed by deallocating this element. In particular for
@@ -119,6 +217,12 @@ impl DeallocSize for Row {
 impl<T: DeallocSize> DeallocSize for Vec<T> {
     fn dealloc_size(&self) -> u64 {
         self.iter().map(DeallocSize::dealloc_size).sum()
+    }
+}
+
+impl <T:DeallocSize> DeallocSize for Option<T> {
+    fn dealloc_size(&self) -> u64 {
+        self.as_ref().map_or(0,DeallocSize::dealloc_size)
     }
 }
 
