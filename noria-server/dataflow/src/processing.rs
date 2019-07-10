@@ -91,7 +91,7 @@ crate enum ReplayContext {
 }
 
 impl ReplayContext {
-    fn key(&self) -> Option<&[usize]> {
+    pub(crate) fn key(&self) -> Option<&[usize]> {
         if let ReplayContext::Partial { ref key_cols, .. } = *self {
             Some(&key_cols[..])
         } else {

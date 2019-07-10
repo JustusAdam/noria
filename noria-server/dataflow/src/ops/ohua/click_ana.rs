@@ -2,7 +2,9 @@ use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
-use crate::state::click_ana::{ClickAnaState};
+use crate::ops::grouped::get_group_values;
+use crate::state::click_ana::{iseq, ClickAnaState, Computer};
+//use crate::state::cstate::{MemoElem};
 use prelude::*;
 
 #[derive(Debug)]
@@ -12,7 +14,6 @@ pub enum FreeGroup<A> {
     Not(Box<FreeGroup<A>>),
     Empty,
 }
-
 
 type Timestamp = i32;
 type Category = i32;
@@ -39,6 +40,10 @@ pub struct ClickAna {
 }
 
 impl ClickAna {
+    fn run(&self, row: &[DataType]) -> iseq::Action<i32> {
+        unimplemented!()
+    }
+
     pub fn new(
         src: NodeIndex,
         start_cat: Category,
@@ -69,10 +74,7 @@ impl ClickAna {
         replay_key_cols: &Option<&[usize]>,
         state: &mut StateMap,
     ) -> ProcessingResult {
-
         debug_assert_eq!(from, *self.src);
-
-        let concat = self.concat;
 
         if rs.is_empty() {
             return ProcessingResult {
@@ -82,7 +84,6 @@ impl ClickAna {
         }
 
         let group_by = &self.group_by;
-        // Are the columns equal that we group over
         let cmp = |a: &Record, b: &Record| {
             group_by
                 .iter()
@@ -98,11 +99,12 @@ impl ClickAna {
 
         // find the current value for this group
         let us = self.local_index.unwrap();
-        let db = state
-            .get(*us)
+        let db = &mut state
+            .get_mut(*us)
             .expect("grouped operators must have their own state materialized")
             .as_click_ana_state()
-            .unwrap();
+            .expect("This operator need a special state type")
+            .0;
 
         let mut misses = Vec::new();
         let mut lookups = Vec::new();
@@ -110,26 +112,24 @@ impl ClickAna {
         {
             let out_key = &self.out_key;
             let mut handle_group =
-                |group_rs: ::std::vec::Drain<Record>, mut diffs: ::std::vec::Drain<_>| {
+                |group_rs: ::std::vec::Drain<Record>, diffs: ::std::vec::Drain<_>| {
                     let mut group_rs = group_rs.peekable();
 
-                    // Retrieve the values for this group
                     let group = get_group_values(group_by, group_rs.peek().unwrap());
 
-                    let mut m = {
-                        if let mut Option::Some(o) = db.lookup_memoizer_mut(&out_key[..], &KeyType::from(&group[..])) {
+                    let mut mrs = db.lookup_leaf_mut(&out_key[..], &KeyType::from(&group[..]));
+                    let rs = match mrs {
+                        Option::Some(ref mut rs) if rs.value_may().is_some() => {
                             if replay_key_cols.is_some() {
                                 lookups.push(Lookup {
                                     on: *us,
                                     cols: out_key.clone(),
                                     key: group.clone(),
                                 });
-                            };
-                            if !o.is_some() {
-                                o.replace(Memoization::default())
-                            };
-                            o.as_ref().unwrap()
-                        } else {
+                            }
+                            rs
+                        }
+                        _ => {
                             misses.extend(group_rs.map(|r| Miss {
                                 on: *us,
                                 lookup_idx: out_key.clone(),
@@ -141,21 +141,31 @@ impl ClickAna {
                         }
                     };
 
-                    m.apply(diffs);
-                    let new = concat(m);
-
-                    match m.memoization {
-                        Some(ref old) if new == **current => {
-                            return;
+                    // Double check that `Computing(None, _)` should actually be caught here
+                    // new is the result of applying all diffs and computing a new value
+                    let new = {
+                        let computer = rs.get_or_init_compute_mut();
+                        for (ac, pos) in diffs {
+                            computer.apply(ac, pos);
                         }
-                    }
+                        computer.compute_new_value().into()
+                    };
 
-                    if let Option::Some(old) = m.memoization.replace()
+                    let old = rs.value_may();
+                    // current value is in the last output column
+                    // or "" if there is no current group
+                    let current = old.map(|r| &r[r.len() - 1]);
+
+                    match current {
+                        Some(ref current) if new == **current => {
+                            // no change
+                        }
                         _ => {
                             if let Some(old) = old {
                                 // revoke old value
                                 debug_assert!(current.is_some());
-                                out.push(Record::Negative(old.into_owned()));
+                                // TODO this used to be `old.to_owned()` check that that also did a clone!
+                                out.push(Record::Negative((**old).clone()));
                             }
 
                             // emit positive, which is group + new.
@@ -169,19 +179,15 @@ impl ClickAna {
             let mut diffs = Vec::new();
             let mut group_rs = Vec::new();
             for r in rs {
-                // This essentially is
-                // rs.chunk_by(group_is_equal(self.group_by)).map(|chunk| {
-                //     handle_group(chunk.map(self.inner.to_diff(...)))
-                // })
                 if !group_rs.is_empty() && cmp(&group_rs[0], &r) != Ordering::Equal {
-                    handle_group(&mut self.inner, group_rs.drain(..), diffs.drain(..));
+                    handle_group(group_rs.drain(..), diffs.drain(..));
                 }
 
-                diffs.push(self.inner.to_diff(&r[..], r.is_positive()));
+                diffs.push((self.run(&r[..]), r.is_positive()));
                 group_rs.push(r);
             }
             assert!(!diffs.is_empty());
-            handle_group(&mut self.inner, group_rs.drain(..), diffs.drain(..));
+            handle_group(group_rs.drain(..), diffs.drain(..));
         }
 
         ProcessingResult {
@@ -231,18 +237,20 @@ impl Ingredient for ClickAna {
 
     fn on_input(
         &mut self,
-        _: &mut Executor,
+        _: &mut dyn Executor,
         from: LocalNodeIndex,
         rs: Records,
         _: &mut Tracer,
         replay_key_cols: Option<&[usize]>,
         _: &DomainNodes,
         state: &StateMap,
-    ) -> ProcessingResult { unimplemented!() }
+    ) -> ProcessingResult {
+        unimplemented!()
+    }
 
     fn on_input_raw_mut(
         &mut self,
-        _: &mut Executor,
+        _: &mut dyn Executor,
         from: LocalNodeIndex,
         rs: Records,
         _: &mut Tracer,
@@ -250,7 +258,7 @@ impl Ingredient for ClickAna {
         _: &DomainNodes,
         state: &mut StateMap,
     ) -> RawProcessingResult {
-        RawProcessingResult::Regular(self.on_input_mut(from, data, replay_key_cols.key(), state))
+        RawProcessingResult::Regular(self.on_input_mut(from, rs, &replay_key_cols.key(), state))
     }
 
     fn suggest_indexes(&self, this: NodeIndex) -> HashMap<NodeIndex, Vec<usize>> {
@@ -280,14 +288,10 @@ impl Ingredient for ClickAna {
         true
     }
 
-    fn make_special_state(&self) -> Option<Box<State>> {
+    fn make_special_state(&self) -> Option<Box<dyn State>> {
         Option::Some(Box::new(ClickAnaState::new()))
     }
-
 }
-
-
-
 
 // pub mod itree {
 //     enum Direction {

@@ -5,16 +5,28 @@ use rand::{self, Rng};
 
 use common::SizeOf;
 use prelude::*;
-use state::single_state::SingleState;
+use state::single_state::{ SingleState,Leaf };
+use state::keyed_state::{DeallocSize};
 
-#[derive(Default)]
-pub struct MemoryState {
-    state: Vec<SingleState>,
+pub(crate) struct MemoryState<T> {
+    state: Vec<SingleState<T>>,
     by_tag: HashMap<Tag, usize>,
     mem_size: u64,
 }
 
-impl SizeOf for MemoryState {
+impl<T> Default for MemoryState<T> {
+    fn default() -> Self {
+        MemoryState {
+            state: Vec::new(),
+            by_tag: HashMap::default(),
+            mem_size: 0,
+        }
+    }
+}
+
+pub(crate) type RowMemoryState = MemoryState<Vec<Row>>;
+
+impl<T> SizeOf for MemoryState<T> {
     fn size_of(&self) -> u64 {
         use std::mem::size_of;
 
@@ -26,7 +38,7 @@ impl SizeOf for MemoryState {
     }
 }
 
-impl State for MemoryState {
+impl<T:Send + Leaf + DeallocSize + std::fmt::Debug> State for MemoryState<T> {
     fn add_key(&mut self, columns: &[usize], partial: Option<Vec<Tag>>) {
         let (i, exists) = if let Some(i) = self.state_for(columns) {
             // already keyed by this key; just adding tags
@@ -56,7 +68,7 @@ impl State for MemoryState {
             if !old.is_empty() {
                 assert!(!old[0].partial());
                 for rs in old[0].values() {
-                    for r in rs {
+                    for r in rs.row_slice() {
                         new.insert_row(Row::from(r.0.clone()));
                     }
                 }
@@ -141,8 +153,8 @@ impl State for MemoryState {
 
     fn cloned_records(&self) -> Vec<Vec<DataType>> {
         #[allow(clippy::ptr_arg)]
-        fn fix<'a>(rs: &'a Vec<Row>) -> impl Iterator<Item = Vec<DataType>> + 'a {
-            rs.iter().map(|r| Vec::clone(&**r))
+        fn fix<'a,T:Leaf>(rs: &'a T) -> impl Iterator<Item = Vec<DataType>> + 'a {
+            rs.row_slice().iter().map(|r| Vec::clone(&**r))
         }
 
         assert!(!self.state[0].partial());
@@ -176,7 +188,7 @@ impl State for MemoryState {
     }
 }
 
-impl MemoryState {
+impl<T: Leaf + DeallocSize> MemoryState<T> {
     /// Returns the index in `self.state` of the index keyed on `cols`, or None if no such index
     /// exists.
     fn state_for(&self, cols: &[usize]) -> Option<usize> {
@@ -222,6 +234,21 @@ impl MemoryState {
 
         hit
     }
+
+    pub fn lookup_leaf<'a>(&'a self, columns: &[usize], key: &KeyType) -> Option<&'a T>
+    where
+        T: std::fmt::Debug
+    {
+        let idx = self.state_for(columns).expect("Lookup on non-indexed column set");
+        self.state[idx].lookup_leaf(key)
+    }
+    pub fn lookup_leaf_mut<'a>(&'a mut self, columns: &[usize], key: &KeyType) -> Option<&'a mut T>
+    where
+        T: std::fmt::Debug
+    {
+        let idx = self.state_for(columns).expect("Lookup on non-indexed column set");
+        self.state[idx].lookup_leaf_mut(key)
+    }
 }
 
 #[cfg(test)]
@@ -235,7 +262,7 @@ mod tests {
 
     #[test]
     fn memory_state_process_records() {
-        let mut state = MemoryState::default();
+        let mut state = RowMemoryState::default();
         let mut records: Records = vec![
             (vec![1.into(), "A".into()], true),
             (vec![2.into(), "B".into()], true),
@@ -267,7 +294,7 @@ mod tests {
 
     #[test]
     fn memory_state_old_records_new_index() {
-        let mut state = MemoryState::default();
+        let mut state = RowMemoryState::default();
         let row: Vec<DataType> = vec![10.into(), "Cat".into()];
         state.add_key(&[0], None);
         insert(&mut state, row.clone());

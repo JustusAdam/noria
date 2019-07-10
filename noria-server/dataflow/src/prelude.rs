@@ -18,7 +18,7 @@ crate use noria::Input;
 crate use payload::{ReplayPathSegment, SourceChannelIdentifier};
 
 // domain local state
-crate use state::{LookupResult, MemoryState, PersistentState, RecordResult, Row, State};
+crate use state::{LookupResult, MemoryState, RowMemoryState, PersistentState, RecordResult, Row, State};
 crate type StateMap = Map<Box<dyn State>>;
 crate type DomainNodes = Map<cell::RefCell<Node>>;
 crate type ReplicaAddr = (DomainIndex, usize);

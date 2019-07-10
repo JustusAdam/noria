@@ -552,7 +552,7 @@ mod tests {
 
     #[test]
     fn it_queries_through_all() {
-        let state = box MemoryState::default();
+        let state = box RowMemoryState::default();
         let (p, states) = setup_query_through(state, &[0, 1, 2], None, None);
         let expected: Vec<DataType> = vec![1.into(), 2.into(), 3.into()];
         assert_query_through(p, 0, 1.into(), states, expected);
@@ -573,7 +573,7 @@ mod tests {
 
     #[test]
     fn it_queries_through_some() {
-        let state = box MemoryState::default();
+        let state = box RowMemoryState::default();
         let (p, states) = setup_query_through(state, &[1], None, None);
         let expected: Vec<DataType> = vec![2.into()];
         assert_query_through(p, 0, 2.into(), states, expected);
@@ -595,7 +595,7 @@ mod tests {
     #[test]
     fn it_queries_through_w_literals() {
         let additional = Some(vec![DataType::Int(42)]);
-        let state = box MemoryState::default();
+        let state = box RowMemoryState::default();
         let (p, states) = setup_query_through(state, &[1], additional, None);
         let expected: Vec<DataType> = vec![2.into(), 42.into()];
         assert_query_through(p, 0, 2.into(), states, expected);
@@ -624,7 +624,7 @@ mod tests {
             op: ArithmeticOperator::Add,
         }]);
 
-        let state = box MemoryState::default();
+        let state = box RowMemoryState::default();
         let (p, states) = setup_query_through(state, &[1], additional, expressions);
         let expected: Vec<DataType> = vec![2.into(), (1 + 2).into(), 42.into()];
         assert_query_through(p, 0, 2.into(), states, expected);

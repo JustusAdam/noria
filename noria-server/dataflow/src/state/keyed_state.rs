@@ -60,12 +60,12 @@ impl<T> KeyedState<T> {
         T: std::fmt::Debug,
     {
         match (self, key) {
-            (&mut KeyedState::Single(ref m), &KeyType::Single(k)) => m.get_mut(k),
-            (&mut KeyedState::Double(ref m), &KeyType::Double(ref k)) => m.get_mut(k),
-            (&mut KeyedState::Tri(ref m), &KeyType::Tri(ref k)) => m.get_mut(k),
-            (&mut KeyedState::Quad(ref m), &KeyType::Quad(ref k)) => m.get_mut(k),
-            (&mut KeyedState::Quin(ref m), &KeyType::Quin(ref k)) => m.get_mut(k),
-            (&mut KeyedState::Sex(ref m), &KeyType::Sex(ref k)) => m.get_mut(k),
+            (&mut KeyedState::Single(ref mut m), &KeyType::Single(k)) => m.get_mut(k),
+            (&mut KeyedState::Double(ref mut m), &KeyType::Double(ref k)) => m.get_mut(k),
+            (&mut KeyedState::Tri(ref mut m), &KeyType::Tri(ref k)) => m.get_mut(k),
+            (&mut KeyedState::Quad(ref mut m), &KeyType::Quad(ref k)) => m.get_mut(k),
+            (&mut KeyedState::Quin(ref mut m), &KeyType::Quin(ref k)) => m.get_mut(k),
+            (&mut KeyedState::Sex(ref mut m), &KeyType::Sex(ref k)) => m.get_mut(k),
             (st, kt) => panic!("State: {:?}, key: {:?}", st, kt),
             (st, kt) => panic!(
                 "Stat: {}, key: {}",

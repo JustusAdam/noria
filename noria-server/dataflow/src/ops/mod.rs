@@ -238,7 +238,7 @@ impl Ingredient for NodeOperator {
     fn requires_full_materialization(&self) -> bool {
         impl_ingredient_fn_ref!(self, requires_full_materialization,)
     }
-    fn make_special_state(&self) -> Option<Box<State>> {
+    fn make_special_state(&self) -> Option<Box<dyn State>> {
         impl_ingredient_fn_ref!(self, make_special_state,)
     }
 }
@@ -308,7 +308,7 @@ pub mod test {
                 .node_weight_mut(global)
                 .unwrap()
                 .on_commit(&remap);
-            self.states.insert(local, box MemoryState::default());
+            self.states.insert(local, box RowMemoryState::default());
             self.remap.insert(global, ip);
             ip
         }
@@ -327,7 +327,7 @@ pub mod test {
             let global = self.graph.add_node(Node::new(name, fields, i));
             let local = unsafe { LocalNodeIndex::make(self.remap.len() as u32) };
             if materialized {
-                self.states.insert(local, box MemoryState::default());
+                self.states.insert(local, box RowMemoryState::default());
             }
             for parent in parents {
                 self.graph.add_edge(parent, global, ());
@@ -420,7 +420,7 @@ pub mod test {
             assert!(self.nut.is_some(), "unseed must happen after set_op");
             let global = self.nut.unwrap().as_global();
             let idx = self.graph[global].suggest_indexes(global);
-            let mut state = MemoryState::default();
+            let mut state = RowMemoryState::default();
             for (tbl, col) in idx {
                 if tbl == base.as_global() {
                     state.add_key(&col[..], None);

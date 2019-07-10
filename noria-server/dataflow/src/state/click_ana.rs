@@ -43,7 +43,14 @@ impl<A> FreeGroup<A> {
     //     }
     // }
 }
-pub type ClickAnaState = MemoizedComputableState<iseq::Seq<i32>>;
+pub(crate) type ClickAnaState = SpecialStateWrapper<MemoElem<iseq::Seq<i32>>>;
+
+pub trait Computer {
+    type Action;
+    type Output;
+    fn apply(&mut self, action: Self::Action, positive: bool);
+    fn compute_new_value(&mut self) -> Self::Output;
+}
 
 pub mod iseq {
     #[derive(Debug)]
@@ -57,6 +64,26 @@ pub mod iseq {
         }
         fn deep_size_of(&self) -> u64 {
             unimplemented!()
+        }
+    }
+
+    impl<T> Default for Seq<T> {
+        fn default() -> Self {
+            Seq(Vec::new())
+        }
+    }
+
+    impl<T: std::fmt::Debug + std::cmp::Ord> super::Computer for Seq<T> {
+        type Action = Action<T>;
+        type Output = usize;
+        fn apply(&mut self, action: Self::Action, positive: bool) {
+            self.handle_helper(action, positive)
+        }
+        fn compute_new_value(&mut self) -> Self::Output {
+            let lens : Vec<usize> = self.complete_intervals().map(|i| i.elems.len()).collect();
+            let l = lens.len();
+            let sum : usize = lens.into_iter().sum();
+            sum / l
         }
     }
 
@@ -424,7 +451,7 @@ pub mod iseq {
             }
         }
 
-        fn handle_helper(&mut self, action: Action<T>, negate: bool) {
+        pub fn handle_helper(&mut self, action: Action<T>, negate: bool) {
             match action {
                 Action::Open(i) => {
                     if !negate {

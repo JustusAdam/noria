@@ -15,7 +15,7 @@ use std::{slice, vec};
 use common::SizeOf;
 use prelude::*;
 
-crate use self::memory_state::MemoryState;
+crate use self::memory_state::{ MemoryState, RowMemoryState };
 crate use self::persistent_state::PersistentState;
 
 crate trait State: SizeOf + Send {

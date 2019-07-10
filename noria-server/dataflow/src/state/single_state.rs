@@ -3,12 +3,12 @@ use super::mk_key::MakeKey;
 use common::SizeOf;
 use prelude::*;
 use rand::prelude::*;
-use state::keyed_state::KeyedState;
+use state::keyed_state::{ KeyedState, DeallocSize };
 use std::rc::Rc;
 
-pub(super) struct SingleState {
+pub(super) struct SingleState<T> {
     key: Vec<usize>,
-    state: KeyedState<Vec<Row>>,
+    state: KeyedState<T>,
     partial: bool,
     rows: usize,
 }
@@ -34,7 +34,41 @@ macro_rules! remove_row_match_impl {
     }};
 }
 
-impl SingleState {
+pub(crate) trait Leaf : Default {
+    fn push(&mut self, item: Row);
+    fn remove(&mut self, row: &[DataType]) -> Option<Row>;
+    fn row_slice(&self) -> &[Row];
+    fn singleton(item: Row) -> Self {
+        let mut n = Self::default();
+        n.push(item);
+        n
+    }
+}
+
+impl Leaf for Vec<Row> {
+    fn push(&mut self, item: Row) {
+        Vec::push(self,item)
+    }
+    fn remove(&mut self, r: &[DataType]) -> Option<Row> {
+        if self.len() == 1 {
+            // it *should* be impossible to get a negative for a record that we don't have
+            debug_assert_eq!(r, &self[0][..]);
+            Some(self.swap_remove(0))
+        } else if let Some(i) = self.iter().position(|rsr| &rsr[..] == r) {
+            Some(self.swap_remove(i))
+        } else {
+            None
+        }
+    }
+    fn row_slice(&self) -> &[Row] {
+        self
+    }
+    fn singleton(item: Row) -> Self {
+        vec![item]
+    }
+}
+
+impl<T: Leaf + DeallocSize> SingleState<T> {
     pub(super) fn new(columns: &[usize], partial: bool) -> Self {
         Self {
             key: Vec::from(columns),
@@ -46,7 +80,10 @@ impl SingleState {
 
     /// Inserts the given record, or returns false if a hole was encountered (and the record hence
     /// not inserted).
-    pub(super) fn insert_row(&mut self, r: Row) -> bool {
+    pub(super) fn insert_row(&mut self, r: Row) -> bool
+    where
+        T: Default
+    {
         use rahashmap::Entry;
         match self.state {
             KeyedState::Single(ref mut map) => {
@@ -62,7 +99,7 @@ impl SingleState {
                     // trying to insert a record into partial materialization hole!
                     return false;
                 }
-                map.insert(r[self.key[0]].clone(), vec![r]);
+                map.insert(r[self.key[0]].clone(), T::singleton(r));
             }
             KeyedState::Double(ref mut map) => insert_row_match_impl!(self, r, map),
             KeyedState::Tri(ref mut map) => insert_row_match_impl!(self, r, map),
@@ -77,18 +114,9 @@ impl SingleState {
 
     /// Attempt to remove row `r`.
     pub(super) fn remove_row(&mut self, r: &[DataType], hit: &mut bool) -> Option<Row> {
-        let mut do_remove = |self_rows: &mut usize, rs: &mut Vec<Row>| -> Option<Row> {
+        let mut do_remove = |self_rows: &mut usize, rs: &mut T| -> Option<Row> {
             *hit = true;
-            let rm = if rs.len() == 1 {
-                // it *should* be impossible to get a negative for a record that we don't have
-                debug_assert_eq!(r, &rs[0][..]);
-                Some(rs.swap_remove(0))
-            } else if let Some(i) = rs.iter().position(|rsr| &rsr[..] == r) {
-                Some(rs.swap_remove(i))
-            } else {
-                None
-            };
-
+            let rm = rs.remove(r);
             if rm.is_some() {
                 *self_rows = self_rows.checked_sub(1).unwrap();
             }
@@ -110,8 +138,11 @@ impl SingleState {
         None
     }
 
-    pub(super) fn mark_filled(&mut self, key: Vec<DataType>) {
-        self.state.mark_filled(key, Vec::new())
+    pub(super) fn mark_filled(&mut self, key: Vec<DataType>)
+    where
+        T: Default
+    {
+        self.state.mark_filled(key, T::default())
     }
 
     pub(super) fn mark_hole(&mut self, key: &[DataType]) -> u64 {
@@ -129,7 +160,8 @@ impl SingleState {
         &mut self,
         count: usize,
         rng: &mut ThreadRng,
-    ) -> (u64, Vec<Vec<DataType>>) {
+    ) -> (u64, Vec<Vec<DataType>>)
+    {
         self.state.evict_random_keys(count, rng)
     }
 
@@ -138,7 +170,7 @@ impl SingleState {
         keys.iter().map(|k| self.state.evict(k)).sum()
     }
 
-    pub(super) fn values<'a>(&'a self) -> Box<dyn Iterator<Item = &'a Vec<Row>> + 'a> {
+    pub(super) fn values<'a>(&'a self) -> Box<dyn Iterator<Item = &'a T> + 'a> {
         match self.state {
             KeyedState::Single(ref map) => Box::new(map.values()),
             KeyedState::Double(ref map) => Box::new(map.values()),
@@ -157,14 +189,29 @@ impl SingleState {
     pub(super) fn rows(&self) -> usize {
         self.rows
     }
-    pub(super) fn lookup<'a>(&'a self, key: &KeyType) -> LookupResult<'a> {
+    pub(super) fn lookup<'a>(&'a self, key: &KeyType) -> LookupResult<'a>
+    where
+        T: std::fmt::Debug
+    {
         if let Some(rs) = self.state.lookup(key) {
-            LookupResult::Some(RecordResult::Borrowed(&rs[..]))
+            LookupResult::Some(RecordResult::Borrowed(&rs.row_slice()[..]))
         } else if self.partial() {
             // partially materialized, so this is a hole (empty results would be vec![])
             LookupResult::Missing
         } else {
             LookupResult::Some(RecordResult::Owned(vec![]))
         }
+    }
+    pub(super) fn lookup_leaf<'a>(&'a self, key: &KeyType) -> Option<&'a T>
+    where
+        T: std::fmt::Debug
+    {
+        self.state.lookup(key)
+    }
+    pub(super) fn lookup_leaf_mut<'a>(&'a mut self, key: &KeyType) -> Option<&'a mut T>
+    where
+        T: std::fmt::Debug
+    {
+        self.state.lookup_mut(key)
     }
 }

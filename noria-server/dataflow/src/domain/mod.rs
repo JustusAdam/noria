@@ -812,7 +812,11 @@ impl Domain {
                         use payload::InitialState;
                         match state {
                             InitialState::PartialLocal(index) => {
-                                let state = make_or_get_state(&mut self.state, node, &self.nodes[node].borrow());
+                                let state = make_or_get_state(
+                                    &mut self.state,
+                                    node,
+                                    &self.nodes[node].borrow(),
+                                );
                                 for (key, tags) in index {
                                     info!(self.log, "told to prepare partial state";
                                            "key" => ?key,
@@ -821,7 +825,11 @@ impl Domain {
                                 }
                             }
                             InitialState::IndexedLocal(index) => {
-                                let state = make_or_get_state(&mut self.state, node,& self.nodes[node].borrow());
+                                let state = make_or_get_state(
+                                    &mut self.state,
+                                    node,
+                                    &self.nodes[node].borrow(),
+                                );
                                 for idx in index {
                                     info!(self.log, "told to prepare full state";
                                            "key" => ?idx);
@@ -1197,7 +1205,7 @@ impl Domain {
 
                                         box PersistentState::new(base_name, base.key(), &params)
                                     }
-                                    _ => box MemoryState::default(),
+                                    _ => box RowMemoryState::default(),
                                 }
                             };
                             for idx in index {
@@ -2751,9 +2759,17 @@ impl Domain {
     }
 }
 
-fn make_or_get_state<'a>(state: &'a mut StateMap, idx: LocalNodeIndex, node:&Node) -> &'a mut Box<State> {
+fn make_or_get_state<'a>(
+    state: &'a mut StateMap,
+    idx: LocalNodeIndex,
+    node: &Node,
+) -> &'a mut Box<dyn State> {
     if !state.contains_key(idx) {
-        state.insert(idx, node.make_special_state().unwrap_or_else(|| box MemoryState::default()));
+        state.insert(
+            idx,
+            node.make_special_state()
+                .unwrap_or_else(|| box RowMemoryState::default()),
+        );
     }
     state.get_mut(idx).unwrap()
 }
