@@ -312,11 +312,25 @@ mod tests {
             fn row(grp: i32, cat: i32, ts: i32) -> Vec<DataType> {
                 vec![grp.into(), cat.into(), ts.into()]
             }
-            let data = vec![
+            let mut data = vec![
                 row(1,1,1),
                 row(1,3,2),
-                row(1,2,3),
+                row(1,3,5),
+                row(1,0,6),
+                row(1,2,10),
+
+                row(1,3,12),
+
+                row(1,1,14),
+                row(1,8,15),
+                row(1,3,16),
+                row(1,7,17),
+                row(1,77,18),
+                row(1,7,22),
+                row(1,2,25),
             ];
+            use rand::Rng;
+            rand::thread_rng().shuffle(&mut data);
             let ops = data.into_iter().map(TableOperation::Insert);
 
             b.table("tab").unwrap().perform_all(ops).wait().unwrap();
@@ -327,7 +341,7 @@ mod tests {
         println!("{:?}", res);
 
         assert!(res.len() == 1);
-        assert!(res[0][1] == 1.0.into());
+        assert!(res[0][1] == 4.0.into());
     }
 
     #[test]
