@@ -60,10 +60,11 @@ pub mod iseq {
 
     impl SizeOf for Seq<i32> {
         fn size_of(&self) -> u64 {
-            unimplemented!()
+            std::mem::size_of::<Self>() as u64
         }
         fn deep_size_of(&self) -> u64 {
-            unimplemented!()
+            // TODO do a proper implementation here and find out if its even should have one
+            self.size_of()
         }
     }
 
@@ -75,15 +76,15 @@ pub mod iseq {
 
     impl<T: std::fmt::Debug + std::cmp::Ord> super::Computer for Seq<T> {
         type Action = Action<T>;
-        type Output = usize;
+        type Output = f64;
         fn apply(&mut self, action: Self::Action, positive: bool) {
-            self.handle_helper(action, positive)
+            self.handle_helper(action, !positive)
         }
         fn compute_new_value(&mut self) -> Self::Output {
             let lens : Vec<usize> = self.complete_intervals().map(|i| i.elems.len()).collect();
             let l = lens.len();
             let sum : usize = lens.into_iter().sum();
-            sum / l
+            sum as f64 / l as f64
         }
     }
 

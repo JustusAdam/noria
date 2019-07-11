@@ -8,9 +8,9 @@ use common::DataType;
 use dataflow::ops::filter::FilterCondition;
 use dataflow::ops::join::{Join, JoinType};
 use dataflow::ops::latest::Latest;
+use dataflow::ops::ohua;
 use dataflow::ops::project::{Project, ProjectExpression, ProjectExpressionBase};
 use dataflow::{node, ops};
-use dataflow::ops::ohua;
 use mir::node::{GroupedNodeType, MirNode, MirNodeType};
 use mir::query::{MirQuery, QueryFlowParts};
 use mir::{Column, FlowNode, MirNodeRef};
@@ -72,6 +72,39 @@ pub(super) fn mir_query_to_flow_parts(
     }
 }
 
+fn make_grouped_udf_node(
+    mir_node: &MirNode,
+    migration: &mut Migration,
+    table_mapping: Option<&HashMap<(String, Option<String>), String>>,
+    function_name: &String,
+    input: &Vec<Column>,
+    group_by: &Vec<Column>,
+) -> FlowNode {
+    let parent = mir_node.ancestors[0].clone();
+    let parent_na = parent.borrow().flow_node_addr().unwrap();
+    let get_indices = |cols: &Vec<Column>| {
+        cols.iter()
+            .map(|c| parent.borrow().column_id_for_column(c, table_mapping))
+            .collect::<Vec<_>>()
+    };
+
+    let group_col_indx = get_indices(group_by);
+    let input_indices = get_indices(input);
+    let columns = mir_node.columns.as_slice();
+    let column_names = column_names(columns);
+    let name = function_name;
+    FlowNode::New(migration.add_ingredient(
+        String::from(name),
+        column_names.as_slice(),
+        ohua::new_grouped_function_from_string(
+            parent_na,
+            input_indices,
+            function_name.clone(),
+            group_col_indx,
+        ),
+    ))
+}
+
 fn mir_node_to_flow_parts(
     mir_node: &mut MirNode,
     mig: &mut Migration,
@@ -100,21 +133,18 @@ fn mir_node_to_flow_parts(
                         table_mapping,
                     )
                 }
-                MirNodeType::UDF { ref function_name, ref input, ref group_by } => {
-
-                    assert_eq!(mir_node.ancestors.len(), 1);
-                    let parent = mir_node.ancestors[0].clone();
-                    make_grouped_node(
-                        &name,
-                        parent,
-                        mir_node.columns.as_slice(),
-                        input,
-                        group_by,
-                        GroupedNodeType::UDF(function_name.clone()),
-                        mig,
-                        table_mapping,
-                    )
-                }
+                MirNodeType::UDF {
+                    ref function_name,
+                    ref input,
+                    ref group_by,
+                } => make_grouped_udf_node(
+                    mir_node,
+                    mig,
+                    table_mapping,
+                    function_name,
+                    input,
+                    group_by,
+                ),
                 MirNodeType::Base {
                     ref mut column_specs,
                     ref keys,
@@ -566,13 +596,7 @@ fn make_grouped_node(
             let gc = GroupConcat::new(parent_na, vec![TextComponent::Column(over_col_indx)], sep);
             mig.add_ingredient(String::from(name), column_names.as_slice(), gc)
         }
-        GroupedNodeType::UDF(func) => {
-            mig.add_ingredient(
-                String::from(name),
-                column_names.as_slice(),
-                ohua::new_grouped_function_from_string(parent_na, over_col_indx, func, group_col_indx),
-            )
-        }
+        GroupedNodeType::UDF(func, cols) => unreachable!(),
     };
     FlowNode::New(na)
 }

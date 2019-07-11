@@ -36,6 +36,7 @@ pub enum NodeOperator {
     GroupingUDF(grouped::GroupedOperator<ohua::GroupedUDF<ohua::TestCount>>),
     ProductUDF(grouped::GroupedOperator<ohua::GroupedUDF<ohua::Product>>),
     OldGroupingUDF(ohua::GroupingUDFOp),
+    ClickAnaUDF(ohua::click_ana::ClickAna),
 }
 
 
@@ -76,6 +77,7 @@ nodeop_from_impl!(NodeOperator::OhuaTestOp, ohua::OhuaTestOp);
 nodeop_from_impl!(NodeOperator::OldGroupingUDF, ohua::GroupingUDFOp);
 nodeop_from_impl!(NodeOperator::GroupingUDF, grouped::GroupedOperator<ohua::GroupedUDF<ohua::TestCount>>);
 nodeop_from_impl!(NodeOperator::ProductUDF, grouped::GroupedOperator<ohua::GroupedUDF<ohua::Product>>);
+nodeop_from_impl!(NodeOperator::ClickAnaUDF, ohua::click_ana::ClickAna);
 
 macro_rules! impl_ingredient_fn_mut {
     ($self:ident, $fn:ident, $( $arg:ident ),* ) => {
@@ -97,6 +99,7 @@ macro_rules! impl_ingredient_fn_mut {
             NodeOperator::GroupingUDF(ref mut i) => i.$fn($($arg),*),
             NodeOperator::ProductUDF(ref mut i) => i.$fn($($arg),*),
             NodeOperator::OldGroupingUDF(ref mut i) => i.$fn($($arg),*),
+            NodeOperator::ClickAnaUDF(ref mut i) => i.$fn($($arg),*),
         }
     }
 }
@@ -121,6 +124,7 @@ macro_rules! impl_ingredient_fn_ref {
             NodeOperator::GroupingUDF(ref i) => i.$fn($($arg),*),
             NodeOperator::ProductUDF(ref i) => i.$fn($($arg),*),
             NodeOperator::OldGroupingUDF(ref i) => i.$fn($($arg),*),
+            NodeOperator::ClickAnaUDF(ref i) => i.$fn($($arg),*),
         }
     }
 }
@@ -188,6 +192,28 @@ impl Ingredient for NodeOperator {
         impl_ingredient_fn_mut!(
             self,
             on_input_raw,
+            ex,
+            from,
+            data,
+            tracer,
+            replay,
+            domain,
+            states
+        )
+    }
+    fn on_input_raw_mut(
+        &mut self,
+        ex: &mut dyn Executor,
+        from: LocalNodeIndex,
+        data: Records,
+        tracer: &mut Tracer,
+        replay: &ReplayContext,
+        domain: &DomainNodes,
+        states: &mut StateMap,
+    ) -> RawProcessingResult {
+        impl_ingredient_fn_mut!(
+            self,
+            on_input_raw_mut,
             ex,
             from,
             data,

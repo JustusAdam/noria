@@ -6,7 +6,7 @@ use nom_sql::{self, ConditionExpression, FunctionExpression};
 use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 
-fn target_columns_from_computed_column(computed_col: &nom_sql::Column) -> Column {
+fn target_columns_from_computed_column(computed_col: &nom_sql::Column) -> Vec<Column> {
     use nom_sql::FunctionExpression::*;
 
     match *computed_col.function.as_ref().unwrap().deref() {
@@ -15,18 +15,21 @@ fn target_columns_from_computed_column(computed_col: &nom_sql::Column) -> Column
         | GroupConcat(ref col, _)
         | Max(ref col)
         | Min(ref col)
-        | Sum(ref col, _) => Column::from(col),
+        | Sum(ref col, _) => vec![Column::from(col)],
         UDF(_,ref cols) => {
-            // TODO(justus) I think udf's should be able to work on multiple
-            // columns, therefore this must be able to return multiple column
-            assert!(cols.len() == 1);
-            Column::from(&cols[0])
+            cols.iter().map(Column::from).collect()
         },
         CountStar => {
             // see comment re COUNT(*) rewriting in make_aggregation_node
             panic!("COUNT(*) should have been rewritten earlier!")
         }
     }
+}
+
+fn single_target_column_from_computed_column(computed_col: &nom_sql::Column) -> Column {
+    let mut cols = target_columns_from_computed_column(computed_col);
+    debug_assert_eq!(cols.len(), 1);
+    cols.remove(0)
 }
 
 // Move predicates above grouped_by nodes
@@ -47,30 +50,31 @@ pub(super) fn make_predicates_above_grouped<'a>(
         None => (),
         Some(computed_cols_cgn) => {
             for ccol in &computed_cols_cgn.columns {
-                let over_col = target_columns_from_computed_column(ccol);
-                let over_table = match over_col.table {
-                    Some(ref t) => t.as_str(),
-                    None => panic!("The value '{:?}' has no table", over_col)
-                };
-
-                if column_to_predicates.contains_key(&over_col) {
-                    let parent = match *prev_node {
-                        Some(ref p) => p.clone(),
-
-                        None => node_for_rel[over_table].clone(),
+                for over_col in target_columns_from_computed_column(ccol) {
+                    let over_table = match over_col.table {
+                        Some(ref t) => t.as_str(),
+                        None => panic!("The value '{:?}' has no table", over_col)
                     };
 
-                    let new_mpns = mir_converter.predicates_above_group_by(
-                        &format!("{}_n{}", name, node_count),
-                        &column_to_predicates,
-                        over_col,
-                        parent,
-                        &mut created_predicates,
-                    );
+                    if column_to_predicates.contains_key(&over_col) {
+                        let parent = match *prev_node {
+                            Some(ref p) => p.clone(),
 
-                    node_count += predicates_above_group_by_nodes.len();
-                    *prev_node = Some(new_mpns.last().unwrap().clone());
-                    predicates_above_group_by_nodes.extend(new_mpns);
+                            None => node_for_rel[over_table].clone(),
+                        };
+
+                        let new_mpns = mir_converter.predicates_above_group_by(
+                            &format!("{}_n{}", name, node_count),
+                            &column_to_predicates,
+                            over_col,
+                            parent,
+                            &mut created_predicates,
+                        );
+
+                        node_count += predicates_above_group_by_nodes.len();
+                        *prev_node = Some(new_mpns.last().unwrap().clone());
+                        predicates_above_group_by_nodes.extend(new_mpns);
+                    }
                 }
             }
         }
@@ -141,8 +145,14 @@ pub(super) fn make_grouped(
                 };
 
                 // We must also push parameter columns through the group by
-                let over_col = target_columns_from_computed_column(&computed_col);
-                let over_table = over_col.table.as_ref().unwrap().as_str();
+                let over_cols = target_columns_from_computed_column(&computed_col);
+                if cfg!(debug) {
+                    let mut tables = over_cols.iter().map(|c| &c.table).collect::<Vec<_>>();
+                    tables.sort();
+                    tables.dedup();
+                    assert_eq!(tables.len(), 1);
+                }
+                let over_table = over_cols[0].table.as_ref().unwrap().as_str();
 
                 let parent_node = match *prev_node {
                     // If no explicit parent node is specified, we extract
@@ -223,7 +233,7 @@ pub(super) fn make_grouped(
                         // output, we make one up a group column by adding an extra
                         // projection node
                         let proj_name = format!("{}_prj_hlpr", name);
-                        let fn_col = target_columns_from_computed_column(&computed_col);
+                        let fn_col = single_target_column_from_computed_column(&computed_col);
 
                         let proj =
                             mir_converter.make_projection_helper(&proj_name, parent_node, &fn_col);

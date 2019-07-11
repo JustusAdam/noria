@@ -277,11 +277,63 @@ mod tests {
         }
     }
 
+    fn make_test_builder(log: bool) -> crate::Builder {
+        let mut b = crate::Builder::default();
+        b.set_sharding(None);
+        if log {
+            b.log_with(crate::logger_pls());
+        }
+        b
+    }
+
+    fn make_test_instance(log: bool) -> super::SyncHandle<noria::consensus::LocalAuthority> {
+        make_test_builder(log).start_simple().unwrap()
+    }
+
+    #[test]
+    fn simple_click_ana_test() {
+        // TODO do this test with a timestamp instead
+        use futures::future::Future;
+        let mut b = make_test_instance(false);
+        b.install_recipe(
+            "CREATE TABLE tab (grp int, category int, ts int);"
+        ).unwrap();
+
+        b.extend_recipe(
+            "VIEW test: SELECT grp, click_ana(category, ts)
+                        FROM tab
+                        WHERE grp = ?
+                        GROUP BY grp;"
+        ).unwrap();
+
+        {
+            //use chrono::{NaiveDateTime};
+            use noria::{ TableOperation, DataType };
+            fn row(grp: i32, cat: i32, ts: i32) -> Vec<DataType> {
+                vec![grp.into(), cat.into(), ts.into()]
+            }
+            let data = vec![
+                row(1,1,1),
+                row(1,3,2),
+                row(1,2,3),
+            ];
+            let ops = data.into_iter().map(TableOperation::Insert);
+
+            b.table("tab").unwrap().perform_all(ops).wait().unwrap();
+        }
+
+        let res = b.view("test").unwrap().lookup(&[1.into()], true).wait().unwrap().1;
+
+        println!("{:?}", res);
+
+        assert!(res.len() == 1);
+        assert!(res[0][1] == 1.0.into());
+    }
+
     #[test]
     // TODO Test that this works with more complex subexpressions in the UDF invokation
     fn very_simple_ohua_integration() {
-        use crate::Builder;
-        let mut b = Builder::default().start_simple().unwrap();
+        let mut b = make_test_instance(false);
         b.install_recipe(
             "CREATE TABLE k (x int, PRIMARY KEY(x));
              CREATE TABLE a (x int, y int, z int, PRIMARY KEY(z));",
@@ -328,13 +380,7 @@ mod tests {
 
     #[test]
     fn product_udf() {
-        use crate::Builder;
-
-        let mut bld = Builder::default();
-
-        bld.log_with(crate::logger_pls());
-
-        let mut b = bld.start_simple().unwrap();
+        let mut b = make_test_instance(false);
 
         b.install_recipe(
             //"CREATE TABLE k (k int, PRIMARY KEY(k));

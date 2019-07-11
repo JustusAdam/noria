@@ -2,6 +2,9 @@ use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
+use super::att3::Typed;
+use nom_sql::SqlType;
+
 use crate::ops::grouped::get_group_values;
 use crate::state::click_ana::{iseq, ClickAnaState, Computer};
 //use crate::state::cstate::{MemoElem};
@@ -18,10 +21,14 @@ pub enum FreeGroup<A> {
 type Timestamp = i32;
 type Category = i32;
 
+#[derive(Serialize, Deserialize,Clone)]
 pub struct ClickAna {
     // Function arguments
-    start_cat: Category,
-    end_cat: Category,
+    start_cat: DataType,
+    end_cat: DataType,
+
+    cat_index: usize,
+    ts_index: usize,
 
     // Index for the input
     // Perhaps at some point this should allow multiple ancestors?
@@ -39,15 +46,34 @@ pub struct ClickAna {
     colfix: Vec<usize>,
 }
 
+impl Typed for ClickAna {
+    type Type = SqlType;
+    fn typ(&self) -> Self::Type {
+        SqlType::Double
+    }
+}
+
 impl ClickAna {
     fn run(&self, row: &[DataType]) -> iseq::Action<i32> {
-        unimplemented!()
+        use self::iseq::Action;
+        let cat = &row[self.cat_index];
+        let ts = row[self.ts_index].clone().into();
+
+        if cat == &self.start_cat {
+            Action::Open(ts)
+        } else if cat == &self.end_cat {
+            Action::Close(ts)
+        } else {
+            Action::Insert(ts)
+        }
     }
 
     pub fn new(
         src: NodeIndex,
         start_cat: Category,
         end_cat: Category,
+        cat_index: usize,
+        ts_index: usize,
         mut group_by: Vec<usize>,
     ) -> ClickAna {
         group_by.sort();
@@ -55,8 +81,11 @@ impl ClickAna {
         ClickAna {
             src: src.into(),
 
-            start_cat: start_cat,
-            end_cat: end_cat,
+            start_cat: start_cat.into(),
+            end_cat: end_cat.into(),
+
+            cat_index,
+            ts_index,
 
             local_index: None,
             cols: 0, // Actually initialized in `on_connected`
@@ -74,6 +103,8 @@ impl ClickAna {
         replay_key_cols: &Option<&[usize]>,
         state: &mut StateMap,
     ) -> ProcessingResult {
+        let idx = self.local_index.unwrap();
+        println!("{} Received input of size {}", idx, rs.len());
         debug_assert_eq!(from, *self.src);
 
         if rs.is_empty() {
@@ -106,6 +137,8 @@ impl ClickAna {
             .expect("This operator need a special state type")
             .0;
 
+        println!("{} Fetched database", idx);
+
         let mut misses = Vec::new();
         let mut lookups = Vec::new();
         let mut out = Vec::new();
@@ -117,9 +150,11 @@ impl ClickAna {
 
                     let group = get_group_values(group_by, group_rs.peek().unwrap());
 
+                    println!("{} Handling group {:?}", idx, &group);
+
                     let mut mrs = db.lookup_leaf_mut(&out_key[..], &KeyType::from(&group[..]));
                     let rs = match mrs {
-                        Option::Some(ref mut rs) if rs.value_may().is_some() => {
+                        Option::Some(ref mut rs) => {
                             if replay_key_cols.is_some() {
                                 lookups.push(Lookup {
                                     on: *us,
@@ -146,9 +181,12 @@ impl ClickAna {
                     let new = {
                         let computer = rs.get_or_init_compute_mut();
                         for (ac, pos) in diffs {
+                            println!("Applying action {:?}", &ac);
                             computer.apply(ac, pos);
                         }
-                        computer.compute_new_value().into()
+                        let v = computer.compute_new_value().into();
+                        println!("{} Computed {}", idx, v);
+                        v
                     };
 
                     let old = rs.value_may();
@@ -158,6 +196,7 @@ impl ClickAna {
 
                     match current {
                         Some(ref current) if new == **current => {
+                            println!("Value did not change");
                             // no change
                         }
                         _ => {
@@ -190,6 +229,8 @@ impl ClickAna {
             handle_group(group_rs.drain(..), diffs.drain(..));
         }
 
+        println!("{} Finished processing", idx);
+
         ProcessingResult {
             results: out.into(),
             lookups,
@@ -200,8 +241,7 @@ impl ClickAna {
 
 impl Ingredient for ClickAna {
     fn take(&mut self) -> NodeOperator {
-        unimplemented!()
-        //Clone::clone(self).into()
+        Clone::clone(self).into()
     }
 
     fn ancestors(&self) -> Vec<NodeIndex> {
@@ -228,6 +268,8 @@ impl Ingredient for ClickAna {
     }
 
     fn on_commit(&mut self, us: NodeIndex, remap: &HashMap<NodeIndex, IndexPair>) {
+
+        println!("Being added to graph");
         // who's our parent really?
         self.src.remap(remap);
 
@@ -238,14 +280,14 @@ impl Ingredient for ClickAna {
     fn on_input(
         &mut self,
         _: &mut dyn Executor,
-        from: LocalNodeIndex,
-        rs: Records,
+        _: LocalNodeIndex,
+        _: Records,
         _: &mut Tracer,
-        replay_key_cols: Option<&[usize]>,
+        _: Option<&[usize]>,
         _: &DomainNodes,
-        state: &StateMap,
+        _: &StateMap,
     ) -> ProcessingResult {
-        unimplemented!()
+        unreachable!()
     }
 
     fn on_input_raw_mut(

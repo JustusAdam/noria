@@ -18,7 +18,7 @@ pub enum GroupedNodeType {
     Aggregation(ops::grouped::aggregate::Aggregation),
     Extremum(ops::grouped::extremum::Extremum),
     GroupConcat(String),
-    UDF(String),
+    UDF(String, Vec<Column>),
 }
 
 pub struct MirNode {
@@ -470,7 +470,7 @@ pub enum MirNodeType {
     UDF {
         function_name: String,
         //Do I need this?
-        input: Column,
+        input: Vec<Column>,
         group_by: Vec<Column>,
     },
 }

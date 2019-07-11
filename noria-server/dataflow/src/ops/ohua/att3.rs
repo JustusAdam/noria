@@ -258,7 +258,7 @@ where
 
 pub fn new_grouped_function_from_string(
     parent: NodeIndex,
-    over_col: usize,
+    over_cols: Vec<usize>,
     name: String,
     group: Vec<usize>,
 ) -> NodeOperator {
@@ -266,7 +266,7 @@ pub fn new_grouped_function_from_string(
         "test_count" => GroupedOperator::new(
             parent,
             GroupedUDF {
-                over: over_col,
+                over: over_cols[0],
                 group: group,
                 initial: TestCount::empty(),
             },
@@ -274,11 +274,22 @@ pub fn new_grouped_function_from_string(
         "prod" => GroupedOperator::new(
             parent,
             GroupedUDF {
-                over: over_col,
+                over: over_cols[0],
                 group: group,
                 initial: Product::empty(),
             },
         ).into(),
+        // TODO Get the categories from somewhere
+        "click_ana" => {
+            assert_eq!(over_cols.len(), 2);
+            super::click_ana::ClickAna::new(
+                parent,
+                1,
+                2,
+                over_cols[0],
+                over_cols[1],
+                group,
+        ).into()},
         _ => panic!("Unknown grouping UDF: {}", name),
     }
 }

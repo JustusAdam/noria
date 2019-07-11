@@ -320,7 +320,11 @@ impl GraphViz for MirNodeType {
                 write!(out, "Rw | column: {}", column)?;
             }
             MirNodeType::UDF { ref function_name, ref input, .. } => {
-                write!(out, "udf:{}({})", function_name, print_col(input))?;
+                write!(out, "udf:{}(", function_name)?;
+                for i in input.iter() {
+                    write!(out, "{}", print_col(i))?;
+                }
+                write!(out, ")")?;
             }
         }
         Ok(out)

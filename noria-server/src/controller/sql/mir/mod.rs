@@ -95,7 +95,6 @@ fn value_columns_needed_for_predicates(
         .collect()
 }
 
-
 #[derive(Clone, Debug)]
 pub(super) struct SqlToMirConverter {
     base_schemas: HashMap<String, Vec<(usize, Vec<ColumnSpecification>)>>,
@@ -931,22 +930,39 @@ impl SqlToMirConverter {
         )
     }
 
-    // /// Unused, might be necessary when I implement non-grouping UDF's
-    // fn make_udf_node(&self, name: &str, parents: &[MirNodeRef], func_name: String) -> MirNodeRef {
-    //     assert!(parents.len() == 1, "No more than one parent allowed for the time");
 
-    //     MirNode::new(
-    //         name,
-    //         self.schema_version,
-    //         parents[0].borrow().columns().to_vec(),
-    //         MirNodeType::UDF {
-    //             function_name: func_name,
-    //             inputs: parents.to_vec(),
-    //         },
-    //         parents.to_vec(),
-    //         vec![],
-    //     )
-    // }
+    // Basically is the code from `make_function_node` and `make_grouped_node`
+    // combined but accommodating multi-column input UDF's
+    fn make_grouped_udf_node(
+        &self,
+        name: &str,
+        computed_col: &Column,
+        group_cols: Vec<&Column>,
+        parent: MirNodeRef,
+        function_name: &String,
+        input_columns: &Vec<nom_sql::Column>,
+    ) -> MirNodeRef {
+        // The function node's set of output columns is the group columns plus the function
+        // column
+        let mut combined_columns = group_cols
+            .iter()
+            .map(|c| (*c).clone())
+            .collect::<Vec<Column>>();
+        combined_columns.push(computed_col.clone());
+
+        MirNode::new(
+            name,
+            self.schema_version,
+            combined_columns,
+            MirNodeType::UDF {
+                function_name: function_name.to_string(),
+                group_by: group_cols.into_iter().cloned().collect(),
+                input: input_columns.iter().map(Column::from).collect(),
+            },
+            vec![parent.clone()],
+            vec![],
+        )
+    }
 
     fn make_function_node(
         &self,
@@ -960,6 +976,21 @@ impl SqlToMirConverter {
         use nom_sql::FunctionExpression::*;
 
         let mut out_nodes = Vec::new();
+        let func = func_col.function.as_ref().unwrap();
+
+        match *func.deref() {
+            UDF(ref fun, ref cols) => {
+                assert!(
+                    udf::is_grouped_function(fun),
+                    "Non-grouped UDF's should have been rewritten earlier!"
+                );
+                out_nodes.push(
+                    self.make_grouped_udf_node(name, func_col, group_cols, parent, fun, cols),
+                );
+                return out_nodes;
+            }
+            _ => {}
+        }
 
         let mknode = |over: &Column, t: GroupedNodeType, distinct: bool| {
             if distinct {
@@ -989,7 +1020,6 @@ impl SqlToMirConverter {
             }
         };
 
-        let func = func_col.function.as_ref().unwrap();
         match *func.deref() {
             Sum(ref col, distinct) => mknode(
                 &Column::from(col),
@@ -1025,18 +1055,6 @@ impl SqlToMirConverter {
                 GroupedNodeType::GroupConcat(separator.clone()),
                 false,
             ),
-            UDF(ref fun, ref cols) => {
-                assert!(
-                    udf::is_grouped_function(fun),
-                    "Non-grouped UDF's should have been rewritten earlier!"
-                );
-                assert!(cols.len() == 1, "Multiple inputs aren't yet implemented");
-                mknode(
-                    &Column::from(&cols[0]),
-                    GroupedNodeType::UDF(fun.to_string()),
-                    false,
-                )
-            }
             _ => unimplemented!(),
         }
     }
@@ -1090,10 +1108,10 @@ impl SqlToMirConverter {
                 on: over_col.clone(),
                 separator: sep,
             }),
-            GroupedNodeType::UDF(fun) => mknode(MirNodeType::UDF {
+            GroupedNodeType::UDF(fun, cols) => mknode(MirNodeType::UDF {
                 function_name: fun,
                 group_by: mk_group_by(),
-                input: over_col.clone(),
+                input: cols,
             }),
         }
     }
