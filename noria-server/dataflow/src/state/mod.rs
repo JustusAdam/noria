@@ -59,6 +59,8 @@ crate trait State: SizeOf + Send {
     fn as_click_ana_state<'a>(&'a mut self) -> Option<&'a mut self::click_ana::ClickAnaState> {
         Option::None
     }
+
+    // <insert(state-trait-method-def)>
 }
 
 #[derive(Clone, Debug)]
