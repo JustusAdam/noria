@@ -1,0 +1,24 @@
+ns click_ana;
+
+use sf ohua::sql::{group_by};
+use sf ohua::sql::field::{category, timestamp};
+
+fn main(start_cat: Category, end_cat: Category, clicks: RowStream) -> RowStream {
+    let click_streams = group_by(clicks);
+    Stream::concat(for click_stream in click_streams {
+        let sequences = iseq::Seq::new();
+        for row in click_stream {
+            let time = row.timestamp;
+            if equal(row.category , start_cat) {
+                sequences.open(time)
+            } else {
+                if equal(row.category, end_cat) {
+                    sequences.close(time)
+                } else {
+                    sequences.insert(time)
+                }
+            }
+        };
+        map(sequences.complete_intervals(), Interval::len)
+    })
+}
