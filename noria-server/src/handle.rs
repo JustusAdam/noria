@@ -285,25 +285,28 @@ mod tests {
         }
         b
     }
+    use futures::future::Future;
 
-    fn make_test_instance(log: bool) -> super::SyncHandle<noria::consensus::LocalAuthority> {
+    type ClickAnaTestDBHandle = super::SyncHandle<noria::consensus::LocalAuthority>;
+
+    fn make_test_instance(log: bool) -> ClickAnaTestDBHandle {
         make_test_builder(log).start_simple().unwrap()
     }
 
-    #[test]
-    fn simple_click_ana_test() {
-        // TODO do this test with a timestamp instead
+    const CLICK_ANA_TABLE_SQL : &str =
+        "CREATE TABLE clicks (user_id int, pagetype int, ts int)";
+
+    const CLICK_ANA_SQL : &str = include_str!("click_ana.sql");
+
+    fn prepare_click_ana_db(recipe: &str) -> ClickAnaTestDBHandle {
         use futures::future::Future;
         let mut b = make_test_instance(false);
         b.install_recipe(
-            "CREATE TABLE tab (grp int, category int, ts int);"
+            CLICK_ANA_TABLE_SQL
         ).unwrap();
 
         b.extend_recipe(
-            "VIEW test: SELECT grp, click_ana(category, ts)
-                        FROM tab
-                        WHERE grp = ?
-                        GROUP BY grp;"
+            recipe
         ).unwrap();
 
         {
@@ -335,8 +338,33 @@ mod tests {
 
             b.table("tab").unwrap().perform_all(ops).wait().unwrap();
         }
+        b
+    }
+
+    #[test]
+    fn simple_click_ana_test() {
+        // TODO do this test with a timestamp instead
+        let mut b = prepare_click_ana_db(
+            "VIEW test: SELECT grp, click_ana(pagetype, ts)
+                        FROM tab
+                        WHERE user_id = ?
+                        GROUP BY user_id;"
+        );
 
         let res = b.view("test").unwrap().lookup(&[1.into()], true).wait().unwrap().1;
+
+        println!("{:?}", res);
+
+        assert!(res.len() == 1);
+        assert!(res[0][1] == 4.0.into());
+    }
+
+    #[test]
+    fn simple_pure_sql_click_ana_test() {
+        let mut b = prepare_click_ana_db(CLICK_ANA_SQL
+        );
+
+        let res = b.view("click_ana_sql").unwrap().lookup(&[1.into()], true).wait().unwrap().1;
 
         println!("{:?}", res);
 
@@ -421,7 +449,7 @@ mod tests {
         //                 GROUP BY k.k;")
         //     .unwrap();
         b.extend_recipe(
-            "VIEW test: SELECT a.x, sum(a.y)
+            "VIEW test: SELECT a.x, prod(a.y)
                         FROM a
                         WHERE a.x = ?
                         GROUP By x;")
@@ -438,7 +466,7 @@ mod tests {
 
         b.table("a").unwrap().delete(vec![2.into()]).wait().unwrap();
 
-        assert!(b.view("test").unwrap().lookup(&[3.into()],true).wait().unwrap().1[0][1] == 6.0.into());
+        assert!(b.view("test").unwrap().lookup(&[1.into()],true).wait().unwrap().1[0][1] == 6.0.into());
 
     }
 }
