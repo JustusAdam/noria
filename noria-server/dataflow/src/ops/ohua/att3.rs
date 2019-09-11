@@ -290,6 +290,8 @@ pub fn new_grouped_function_from_string(
                 over_cols[1],
                 group,
         ).into()},
+        // <begin(generated-udf-inits)>
+        // <end(generated-udf-inits)>
         _ => panic!("Unknown grouping UDF: {}", name),
     }
 }

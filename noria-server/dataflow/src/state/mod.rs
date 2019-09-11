@@ -18,6 +18,8 @@ use prelude::*;
 crate use self::memory_state::{ MemoryState, RowMemoryState };
 crate use self::persistent_state::PersistentState;
 
+use state::cstate::{ SpecialStateWrapper,MemoElem};
+
 crate trait State: SizeOf + Send {
 
     /// Add an index keyed by the given columns and replayed to by the given partial tags.
