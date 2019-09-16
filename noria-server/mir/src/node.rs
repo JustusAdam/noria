@@ -473,6 +473,11 @@ pub enum MirNodeType {
         input: Vec<Column>,
         group_by: Vec<Column>,
     },
+    UDFBasic {
+        function_name: String,
+        indices: Vec<usize>,
+    },
+    Zip { left: Vec<usize>, right: Vec<usize>},
 }
 
 impl MirNodeType {
@@ -980,6 +985,7 @@ impl Debug for MirNodeType {
             MirNodeType::Rewrite { ref column, .. } => write!(f, "Rw [{}]", column),
             MirNodeType::UDF { ref function_name, ref input, .. } =>
                 write!(f, "udf:{}({:?})", function_name, input),
+            _ => { write!(f, "Missing") }
         }
     }
 }

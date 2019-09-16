@@ -16,6 +16,57 @@ pub struct QueryFlowParts {
     pub query_leaf: NodeIndex,
 }
 
+pub struct QueryIter {
+    current: Vec<MirNodeRef>,
+    next: Vec<MirNodeRef>,
+}
+
+impl QueryIter {
+    // chosen by fair dice roll
+    // guaranteed to be random
+    const EXTRA_CAP: usize = 8;
+
+    pub fn new(roots: &Vec<MirNodeRef>) -> Self {
+        QueryIter {
+            current: roots.clone(),
+            next: Vec::with_capacity(roots.len() + Self::EXTRA_CAP),
+        }
+    }
+}
+
+impl Iterator for QueryIter {
+    type Item = MirNodeRef;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // There should be a better way to do this but the only one I can think
+        // ow immediately is this. The reason I do this is to avoid traversing
+        // the same node twice which may lead to inconsistencies.
+        use std::rc::Rc;
+        if let Some(mref) = self.current.pop() {
+            let curr = &self.current;
+            self.next.extend(
+                mref.borrow()
+                    .children()
+                    .iter()
+                    .filter(|c| !curr.iter().any(|c2| Rc::ptr_eq(c, c2)))
+                    .cloned(),
+            );
+            Some(mref)
+        } else {
+            if self.next.is_empty() {
+                None
+            } else {
+                while let Some(n) = self.next.pop() {
+                    if !self.next.iter().any(|c| Rc::ptr_eq(&n, c)) {
+                        self.current.push(n);
+                    }
+                }
+                self.next()
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct MirQuery {
     pub name: String,
@@ -30,6 +81,10 @@ impl MirQuery {
             roots: vec![node.clone()],
             leaf: node,
         }
+    }
+
+    pub fn iter(&self) -> QueryIter {
+        QueryIter::new(&self.roots)
     }
 
     #[cfg(test)]

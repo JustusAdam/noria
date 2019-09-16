@@ -1,24 +1,45 @@
 ns click_ana;
 
-use sf ohua::sql::{group_by};
-use sf ohua::sql::field::{category, timestamp};
+use sf ohua::sql::query::{group_by};
+use sf ohua::sql::Stream::{concat};
+use sf crate::state::click_ana::iseq::ClickAnaInner;
+use sf crate::state::click_ana::iseq::Seq::{open,close,insert,complete_intervals, compute_new_value};
+use sf crate::state::click_ana::iseq::Interval;
+use sf primitives::{ eq, deref, divide };
+use sf std::iter::Iterator::{ map, sum, collect };
+use sf Vec;
+use sf Vec::{into_iter};
+
+// TODO somehow link up the arguments (start_cat, end_cat)
+
+//# declare-field timestamp : i32
+//# declare-field category : i32
 
 fn main(start_cat: Category, end_cat: Category, clicks: RowStream) -> RowStream {
     let click_streams = group_by(clicks);
-    Stream::concat(for click_stream in click_streams {
-        let sequences = iseq::Seq::new();
+    concat(for click_stream in click_streams {
+        let sequences = ClickAnaInner::new();
         for row in click_stream {
-            let time = row.timestamp;
-            if equal(row.category , start_cat) {
+            let time = deref(timestamp(row));
+            let cat = deref(category(row));
+            if eq(cat, 1) {
                 sequences.open(time)
             } else {
-                if equal(row.category, end_cat) {
+                if eq(cat, 2) {
                     sequences.close(time)
                 } else {
                     sequences.insert(time)
                 }
             }
         };
-        map(sequences.complete_intervals(), Interval::len)
+        sequences.compute_new_value()
+        // I'd love tobe able to write this, but alas somehow I can't get it to work
+        // It seems I either need a way to distiguish using . for rust expressions or
+        // type annotations to guide the rust compiler
+        // let interval_seq = sequences.complete_intervals();
+        // let intervals = collect(interval_seq);
+        // let ivlen = Vec::len(deref(intervals));
+        // let len_iter = map(into_iter(intervals), Interval::len);
+        // divide(sum(len_iter), ivlen)
     })
 }

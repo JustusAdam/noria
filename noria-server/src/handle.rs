@@ -291,6 +291,24 @@ mod tests {
     }
 
     #[test]
+    fn show_me_the_graph() {
+        use futures::future::Future;
+        let mut b = make_test_instance(false);
+
+        b.install_recipe(
+            "CREATE TABLE tab (x int, y int, PRIMARY KEY(x));"
+        ).unwrap();
+
+        b.extend_recipe(
+            "VIEW test: SELECT count(*), sum(y) FROM tab WHERE x = ? GROUP BY x ;"
+        ).unwrap();
+
+        b.table("tab").unwrap().insert(vec![1.into(), 2.into()]).wait().unwrap();
+
+        println!("{:?}", b.view("test").unwrap().lookup(&[1.into()], true).wait().unwrap().1);
+    }
+
+    #[test]
     fn simple_click_ana_test() {
         // TODO do this test with a timestamp instead
         use futures::future::Future;

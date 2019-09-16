@@ -30,6 +30,8 @@ mod join;
 mod rewrite;
 mod security;
 
+use mir::udfs;
+
 fn sanitize_leaf_column(c: &mut Column, view_name: &str) {
     c.table = Some(view_name.to_string());
     c.function = None;
@@ -930,7 +932,6 @@ impl SqlToMirConverter {
         )
     }
 
-
     // Basically is the code from `make_function_node` and `make_grouped_node`
     // combined but accommodating multi-column input UDF's
     fn make_grouped_udf_node(
@@ -1329,6 +1330,97 @@ impl SqlToMirConverter {
             vec![parent.clone()],
             vec![],
         )
+    }
+
+    // Add initial project
+    fn expand_graph_udfs(&self, query: MirQuery) -> MirQuery {
+        use self::udfs;
+        for node_ref in query.iter() {
+            let node = node_ref.borrow();
+            match node.inner {
+                MirNodeType::UDF {
+                    ref function_name,
+                    ref input,
+                    ..
+                } => {
+                    assert_eq!(node.ancestors.len(), 1);
+                    assert_eq!(node.ancestors.len(), 1);
+                    let parent = &node.ancestors[0];
+                    let child = &node.children[0];
+                    if let Some(gr) = udfs::get_graph(function_name) {
+                        let nodes: Vec<MirNodeRef> = gr
+                            .nodes
+                            .iter()
+                            .map(|(namespace, name, _, _)| {
+                                (MirNode::new(
+                                    &format!("{}_{}_{}", node.name, function_name, name),
+                                    self.schema_version,
+                                    vec![],
+                                    match namespace {
+                                        "ohua.lang" => match name {
+                                            "(,)" => MirNodeType::Join {
+                                                on_left: vec![],
+                                                on_right: vec![],
+                                                project: vec![],
+                                            },
+                                            _ => panic!("Unexpected language operator '{}'", name)
+                                        },
+                                        "ohua.sql" => match name {
+                                            "group_by" => MirNodeType::Identity
+                                        }
+                                        _ => MirNodeType::UDF {
+                                            function_name: name.clone(),
+                                            group_by: group_by.clone(),
+                                            input: vec![],
+                                        },
+                                    },
+                                    vec![],
+                                    vec![],
+                                ),
+                                 match namespace {
+                                     "ohua.sql" => match name {
+                                         "group_by" => Context::GroupBy()
+                                     }
+                                 }
+                            })
+                            .collect();
+                        for (idx, (_, inp, outp)) in gr.nodes.iter().enumerate() {
+                            use udfs::Index;
+                            let mut (n, ctx) = nodes[idx].borrow_mut();
+                            let ins = inp
+                                .iter()
+                                .map(|(idx_type, idx)| match idx_type {
+                                    Index::Source => {
+                                        match n.inner {
+                                            MirNodeType::UDF {
+                                                input: ref mut input0,
+                                                ..
+                                            } => input0.push(input[*idx].clone()),
+                                            _ => unreachable!(),
+                                        };
+                                        parent.clone()
+                                    }
+                                    Index::Local => nodes[*idx].clone(),
+                                    _ => panic!("Invalid index {:?},{}", idx_type, idx),
+                                })
+                                .collect();
+                            let outs = outp
+                                .iter()
+                                .map(|(idx_type, idx)| match idx_type {
+                                    Index::Sink => child.clone(),
+                                    Index::Local => nodes[*idx].clone(),
+                                    _ => panic!("Invalid index {:?},{}", idx_type, idx),
+                                })
+                                .collect();
+                            n.ancestors = ins;
+                            n.children = outs;
+                        }
+                    }
+                }
+                _ => (),
+            }
+        }
+        query
     }
 
     fn make_predicate_nodes(

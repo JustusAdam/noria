@@ -19,6 +19,7 @@ pub mod query;
 pub mod reuse;
 mod rewrite;
 pub mod visualize;
+pub mod udfs;
 
 pub type MirNodeRef = Rc<RefCell<node::MirNode>>;
 

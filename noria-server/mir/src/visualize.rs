@@ -326,6 +326,7 @@ impl GraphViz for MirNodeType {
                 }
                 write!(out, ")")?;
             }
+            _ => write!(out, "Missing")?,
         }
         Ok(out)
     }
