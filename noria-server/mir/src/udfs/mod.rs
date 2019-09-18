@@ -1,5 +1,6 @@
 
 use crate::node::MirNodeType;
+use column::Column;
 
 // <begin(graph-mods)>
 mod composition_graph;
@@ -13,9 +14,16 @@ mod composition_graph;
 /// this setup the indices then directly correspond to the indices in the
 /// resulting vector.
 pub struct UDFGraph {
-    pub adjacency_list: Vec<(MirNodeType, Vec<usize>)>,
-    pub sink: (usize, Vec<usize>),
+    pub adjacency_list: Vec<(MirNodeType, Vec<Column>, Vec<usize>)>,
+    pub sink: (usize, Vec<Column>),
+    pub source: Vec<Column>,
 
+}
+
+pub enum ExecutionType {
+    Reduction {
+        group_by: Vec<Column>,
+    }
 }
 
 pub fn get_graph(gr: &String) -> Option<UDFGraph> {

@@ -18,7 +18,6 @@ pub enum GroupedNodeType {
     Aggregation(ops::grouped::aggregate::Aggregation),
     Extremum(ops::grouped::extremum::Extremum),
     GroupConcat(String),
-    UDF(String, Vec<Column>),
 }
 
 pub struct MirNode {
@@ -469,15 +468,14 @@ pub enum MirNodeType {
     /// An "arbitrary" Rust or Ohua function to call
     UDF {
         function_name: String,
-        //Do I need this?
         input: Vec<Column>,
-        group_by: Vec<Column>,
+        group_by: Option<Vec<Column>>,
     },
     UDFBasic {
         function_name: String,
-        indices: Vec<usize>,
-    },
-    Zip { left: Vec<usize>, right: Vec<usize>},
+        indices: Vec<Column>,
+        execution_type: super::udfs::ExecutionType,
+    }
 }
 
 impl MirNodeType {

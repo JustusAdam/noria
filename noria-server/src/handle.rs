@@ -262,6 +262,7 @@ impl<A: Authority + 'static> Drop for SyncHandle<A> {
 
 #[cfg(test)]
 mod tests {
+    use futures::future::Future;
     #[test]
     #[should_panic]
     #[cfg_attr(not(debug_assertions), allow_fail)]
@@ -291,8 +292,23 @@ mod tests {
     }
 
     #[test]
+    fn simple_ohua_composition_test() {
+        let mut b = make_test_instance(false);
+        b.install_recipe(
+            "CREATE TABLE tab (x int, y int, PRIMARY KEY(x));"
+        ).unwrap();
+
+        b.extend_recipe(
+            "VIEW test: SELECT composition(x, y) FROM tab WHERE x = ?;"
+        ).unwrap();
+
+        b.table("tab").unwrap().insert(vec![1.into(), 2.into()]).wait().unwrap();
+
+        println!("{:?}", b.view("test").unwrap().lookup(&[1.into()], true).wait().unwrap().1);
+    }
+
+    #[test]
     fn show_me_the_graph() {
-        use futures::future::Future;
         let mut b = make_test_instance(false);
 
         b.install_recipe(
@@ -311,7 +327,6 @@ mod tests {
     #[test]
     fn simple_click_ana_test() {
         // TODO do this test with a timestamp instead
-        use futures::future::Future;
         let mut b = make_test_instance(false);
         b.install_recipe(
             "CREATE TABLE tab (grp int, category int, ts int);"

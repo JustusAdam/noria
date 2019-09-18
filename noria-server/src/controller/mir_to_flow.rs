@@ -12,6 +12,7 @@ use dataflow::ops::ohua;
 use dataflow::ops::project::{Project, ProjectExpression, ProjectExpressionBase};
 use dataflow::{node, ops};
 use mir::node::{GroupedNodeType, MirNode, MirNodeType};
+use mir::udfs;
 use mir::query::{MirQuery, QueryFlowParts};
 use mir::{Column, FlowNode, MirNodeRef};
 use petgraph::graph::NodeIndex;
@@ -133,16 +134,17 @@ fn mir_node_to_flow_parts(
                         table_mapping,
                     )
                 }
-                MirNodeType::UDF {
+                MirNodeType::UDF {ref function_name, ..} => unreachable!("UDF {} not expanded", function_name),
+                MirNodeType::UDFBasic {
                     ref function_name,
-                    ref input,
-                    ref group_by,
+                    ref indices,
+                    execution_type : udfs::ExecutionType::Reduction { ref group_by },
                 } => make_grouped_udf_node(
                     mir_node,
                     mig,
                     table_mapping,
                     function_name,
-                    input,
+                    indices,
                     group_by,
                 ),
                 MirNodeType::Base {
@@ -596,7 +598,6 @@ fn make_grouped_node(
             let gc = GroupConcat::new(parent_na, vec![TextComponent::Column(over_col_indx)], sep);
             mig.add_ingredient(String::from(name), column_names.as_slice(), gc)
         }
-        GroupedNodeType::UDF(func, cols) => unreachable!(),
     };
     FlowNode::New(na)
 }
