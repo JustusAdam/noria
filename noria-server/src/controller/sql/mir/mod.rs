@@ -1345,6 +1345,8 @@ impl SqlToMirConverter {
                     if let Some(gr) = udfs::get_graph(function_name) {
                         // assert_eq!(group_by, &Option::None);
                         assert_eq!(node.ancestors.len(), 1);
+                        assert_eq!(input.len(), gr.source.len());
+                        
                         let top = MirNode::new(
                             format!("{}-enter", &node.name).as_ref(),
                             self.schema_version,

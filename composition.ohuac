@@ -3,15 +3,17 @@ mod composition;
 use sf ohua::sql::query::{group_by};
 use sf crate::state::ohua::sum::{ Sum, add, get_sum };
 use sf crate::state::ohua::count::{ Count, increment, get_value };
+use sf primitives::deref;
 
 
 //# declare-field user_id : i32
 //# declare-field a_field : i32
 
-fn sum(field: Field<i32> , rows : RowStream) {
+fn sum(rows : RowStream) {
    let acc = Sum::new();
-   for r in rows {
-       acc.add(field(r));
+   for (_,r) in rows {
+   //for r in rows {
+       acc.add(deref(r));
    };
    acc.get_sum()
 }
@@ -24,11 +26,11 @@ fn count(rows : RowStream) {
    acc.get_value()
 }
 
-fn composition(rows : RowStream<i32>) {
+fn composition(rows : RowStream<i32,i32>) {
 
    for g in group_by(0, rows) {
        ( count(g)
-       , sum(a_field, g)
+       , sum(g)
        )
    }
 }

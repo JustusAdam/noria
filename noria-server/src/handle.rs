@@ -295,14 +295,28 @@ mod tests {
     fn simple_ohua_composition_test() {
         let mut b = make_test_instance(false);
         b.install_recipe(
-            "CREATE TABLE tab (x int, y int, PRIMARY KEY(x));"
+            "CREATE TABLE tab (x int, y int);"
         ).unwrap();
 
         b.extend_recipe(
             "VIEW test: SELECT composition(x, y) FROM tab WHERE x = ?;"
         ).unwrap();
 
-        b.table("tab").unwrap().insert(vec![1.into(), 2.into()]).wait().unwrap();
+        {
+            use noria::{ TableOperation, DataType };
+            fn row(x: i32, y: i32) -> Vec<DataType> {
+                vec![x.into(), y.into()]
+            }
+            let mut data = vec![
+                row(1,1),
+                row(1,2),
+                row(1,3),
+                row(1,4),
+            ];
+            let ops = data.into_iter().map(TableOperation::Insert);
+
+            b.table("tab").unwrap().perform_all(ops).wait().unwrap();
+        }
 
         println!("{:?}", b.view("test").unwrap().lookup(&[1.into()], true).wait().unwrap().1);
     }

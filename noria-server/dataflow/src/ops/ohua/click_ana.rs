@@ -48,7 +48,7 @@ pub struct ClickAna {
 
 impl Typed for ClickAna {
     type Type = SqlType;
-    fn typ(&self) -> Self::Type {
+    fn typ_static() -> Self::Type {
         SqlType::Double
     }
 }
