@@ -1,0 +1,18 @@
+[package]
+name = "udf-benchmarks"
+version = "0.0.1"
+authors = ["Justus Adam"]
+edition = "2018"
+publish = false
+
+[dependencies]
+noria = { path = "../noria-server", package = "noria-server" }
+nom-sql = "0.0.6"
+slog = "2.4.0"
+slog-term = "2.4.0"
+zookeeper = "0.5.3"
+clap = "2.25.0"
+
+[[bin]]
+name = "features"
+path = "features/main.rs"

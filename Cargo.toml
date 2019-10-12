@@ -4,6 +4,7 @@ members = [
 	"noria-server",
 	"noria-benchmarks",
 	"noria-benchmarks/lobsters",
+	"udf-benchmarks",
 ]
 
 [profile.release]
