@@ -1,0 +1,7 @@
+ClickstreamEvo 
+    { numUsers = 1000
+    , eventRange = (100,150)
+    , boundaryProb = 0.1
+    , numLookups = 100
+    , queries = ["pure_sql"]
+    }
