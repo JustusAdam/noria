@@ -1346,7 +1346,7 @@ impl SqlToMirConverter {
                         // assert_eq!(group_by, &Option::None);
                         assert_eq!(node.ancestors.len(), 1);
                         assert_eq!(input.len(), gr.source.len());
-                        
+
                         let top = MirNode::new(
                             format!("{}-enter", &node.name).as_ref(),
                             self.schema_version,
@@ -1444,7 +1444,14 @@ impl SqlToMirConverter {
                             link(n_ref, adj);
                         }
                     } else {
-                        panic!("No graph found for UDF {}", function_name)
+                        use udfs::ExecutionType;
+                        // HACK This is really just for the udf benchmarks
+                        node.inner = MirNodeType::UDFBasic {
+                            function_name : format!("ohua.generated/{}", function_name.clone()),
+                            indices : input.clone(),
+                            execution_type : ExecutionType::Reduction{group_by:group_by.clone().unwrap_or(vec![])},
+                        };
+                        //panic!("No graph found for UDF {}", function_name)
                     }
                 }
                 _ => (),
