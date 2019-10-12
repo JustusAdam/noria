@@ -136,25 +136,31 @@ pub struct GroupedUDF<F> {
 
 pub trait Typed {
     type Type;
-    fn typ(&self) -> Self::Type;
+    fn typ_static() -> Self::Type;
+    fn typ(&self) -> Self::Type {
+        Self::typ_static()
+    }
 }
 
 impl Typed for TestCount {
     type Type = SqlType;
-    fn typ(&self) -> Self::Type {
+    fn typ_static() -> Self::Type {
         SqlType::Bigint(64)
     }
 }
 
 impl Typed for Product {
     type Type = SqlType;
-    fn typ(&self) -> Self::Type {
+    fn typ_static() -> Self::Type {
         SqlType::Double
     }
 }
 
 impl<F: Typed> Typed for GroupedUDF<F> {
     type Type = F::Type;
+    fn typ_static() -> Self::Type {
+        F::typ_static()
+    }
     fn typ(&self) -> Self::Type {
         self.initial.typ()
     }
@@ -290,8 +296,19 @@ pub fn new_grouped_function_from_string(
                 over_cols[1],
                 group,
         ).into()},
-        // <begin(generated-udf-inits)>
-        // <end(generated-udf-inits)>
-        _ => panic!("Unknown grouping UDF: {}", name),
+        // <insert(generated-reducing-operator-inits)>
+        _ => panic!("Unknown generated grouping operator: {}", name),
+    }
+}
+
+pub fn new_simple_function_from_string(
+    parent: NodeIndex,
+    over_cols: Vec<usize>,
+    name: String,
+    carry: usize,
+) -> NodeOperator {
+    match name.as_ref() {
+        // <insert(generated-simple-operator-inits)>
+        _ => panic!("Unknown simple generated operator: {}", name)
     }
 }

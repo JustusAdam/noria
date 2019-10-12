@@ -106,6 +106,39 @@ fn make_grouped_udf_node(
     ))
 }
 
+
+fn make_simple_udf_node(
+    mir_node: &MirNode,
+    migration: &mut Migration,
+    table_mapping: Option<&HashMap<(String, Option<String>), String>>,
+    function_name: &String,
+    input: &Vec<Column>,
+    carry: usize
+) -> FlowNode {
+    let parent = mir_node.ancestors[0].clone();
+    let parent_na = parent.borrow().flow_node_addr().unwrap();
+    let get_indices = |cols: &Vec<Column>| {
+        cols.iter()
+            .map(|c| parent.borrow().column_id_for_column(c, table_mapping))
+            .collect::<Vec<_>>()
+    };
+
+    let input_indices = get_indices(input);
+    let columns = mir_node.columns.as_slice();
+    let column_names = column_names(columns);
+    let name = function_name;
+    FlowNode::New(migration.add_ingredient(
+        String::from(name),
+        column_names.as_slice(),
+        ohua::new_simple_function_from_string(
+            parent_na,
+            input_indices,
+            function_name.clone(),
+            carry,
+        ),
+    ))
+}
+
 fn mir_node_to_flow_parts(
     mir_node: &mut MirNode,
     mig: &mut Migration,
@@ -138,15 +171,20 @@ fn mir_node_to_flow_parts(
                 MirNodeType::UDFBasic {
                     ref function_name,
                     ref indices,
-                    execution_type : udfs::ExecutionType::Reduction { ref group_by },
-                } => make_grouped_udf_node(
+                    execution_type,
+                } =>
+                match execution_type {
+                    udfs::ExecutionType::Reduction { ref group_by } =>
+                     make_grouped_udf_node(
                     mir_node,
                     mig,
                     table_mapping,
                     function_name,
                     indices,
-                    group_by,
-                ),
+                    group_by),
+                    udfs::ExecutionType::Simple { carry } =>
+                        make_simple_udf_node(mir_node, mig, table_mapping, function_name, indices, carry)
+                }
                 MirNodeType::Base {
                     ref mut column_specs,
                     ref keys,

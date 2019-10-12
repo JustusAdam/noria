@@ -23,7 +23,10 @@ pub struct UDFGraph {
 pub enum ExecutionType {
     Reduction {
         group_by: Vec<Column>,
-    }
+    },
+    Simple {
+        carry: usize
+    },
 }
 
 pub fn get_graph(gr: &String) -> Option<UDFGraph> {
