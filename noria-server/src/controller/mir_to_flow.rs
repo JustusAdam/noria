@@ -171,7 +171,7 @@ fn mir_node_to_flow_parts(
                 MirNodeType::UDFBasic {
                     ref function_name,
                     ref indices,
-                    execution_type,
+                    ref execution_type,
                 } =>
                 match execution_type {
                     udfs::ExecutionType::Reduction { ref group_by } =>
@@ -183,7 +183,7 @@ fn mir_node_to_flow_parts(
                     indices,
                     group_by),
                     udfs::ExecutionType::Simple { carry } =>
-                        make_simple_udf_node(mir_node, mig, table_mapping, function_name, indices, carry)
+                        make_simple_udf_node(mir_node, mig, table_mapping, function_name, indices, *carry)
                 }
                 MirNodeType::Base {
                     ref mut column_specs,

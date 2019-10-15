@@ -309,6 +309,7 @@ pub fn new_simple_function_from_string(
 ) -> NodeOperator {
     match name.as_ref() {
         // <insert(generated-simple-operator-inits)>
+        " " => panic!("This is only for type inference"),
         _ => panic!("Unknown simple generated operator: {}", name)
     }
 }
