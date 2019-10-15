@@ -44,6 +44,8 @@ pub mod payload; // it makes me _really_ sad that this has to be pub
 pub mod prelude;
 crate mod state;
 
+crate mod fns;
+
 mod domain;
 mod group_commit;
 mod processing;

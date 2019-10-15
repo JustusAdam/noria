@@ -13,7 +13,7 @@ import Data.Traversable (for)
 import Options.Applicative
 import System.Directory
 import System.FilePath
-import System.IO (IOMode(WriteMode), hPutStrLn, withFile)
+import System.IO (IOMode(WriteMode), hPutStrLn, withFile, hPrint)
 import System.IO.Unsafe (unsafePerformIO)
 import System.Process
 import System.Random
@@ -70,14 +70,13 @@ runBenches outputFile =
             unless genOnly runBench
             where runBench =
                       sumCompBench
-                          "sum-count"
+                          "avg"
                           "SumCount"
                           numGenRange
                           queries
                           outputFile
                           fname
                           lfname
-                          repeat
                           valueLimit
                           lookupRounds
                           lookupsPerRound
@@ -95,7 +94,6 @@ runBenches outputFile =
                           outputFile
                           fname
                           lfname
-                          repeat
                           valueLimit
                           lookupRounds
                           lookupsPerRound
@@ -112,7 +110,7 @@ runBenches outputFile =
                         evr
                         boundaryProb
                         numLookups
-                    when genOnly $ exitSuccess
+                    when genOnly exitSuccess
                     replicateM_ (fromIntegral repeat) $
                         for_ queries $ \query -> do
                             let queryFile =
@@ -181,7 +179,7 @@ clickstreamEvoGen fname lfname numUsers eventRange boundaryProb numLookups = do
         hPutStrLn h "i32"
         replicateM_ (fromIntegral numLookups) $ do
             n <- randomRIO (0, numUsers)
-            hPutStrLn h (show n)
+            hPrint h n
 
 sumCompGen ::
        String
@@ -245,14 +243,13 @@ sumCompBench ::
     -> FilePath
     -> FilePath
     -> FilePath
-    -> Word
     -> (Int, Int)
     -> Word
     -> Word
     -> Word
     -> IO ()
-sumCompBench queryBaseName tabName numGenRange queries outputFile fname lfname repeat valueLimit lookupRounds lookupsPerRound numSelectable = do
-    compileAlgo "sum_count.ohuac" "sum_count"
+sumCompBench queryBaseName tabName numGenRange queries outputFile fname lfname valueLimit lookupRounds lookupsPerRound numSelectable = do
+    compileAlgo "avg.ohuac" "avg"
     withFile outputFile WriteMode $ \h -> do
         hPutStrLn h "Phase,Lang,Items,Time"
         for_ numGenRange $ \n@(lo, hi) -> do
