@@ -6,7 +6,7 @@ use super::att3::Typed;
 use nom_sql::SqlType;
 
 use crate::ops::grouped::get_group_values;
-use crate::state::click_ana::{iseq, ClickAnaState, Computer};
+use crate::state::click_ana::{iseq, ClickAnaState, Computer, I32Wrap};
 //use crate::state::cstate::{MemoElem};
 use prelude::*;
 
@@ -54,10 +54,10 @@ impl Typed for ClickAna {
 }
 
 impl ClickAna {
-    fn run(&self, row: &[DataType]) -> iseq::Action<i32> {
+    fn run(&self, row: &[DataType]) -> iseq::Action<I32Wrap> {
         use self::iseq::Action;
         let cat = &row[self.cat_index];
-        let ts = row[self.ts_index].clone().into();
+        let ts = I32Wrap(row[self.ts_index].clone().into());
 
         if cat == &self.start_cat {
             Action::Open(ts)

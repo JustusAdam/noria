@@ -45,6 +45,7 @@ where
 fn to_deser(s: &str) -> Box<dyn Fn(&str) -> DataType> {
     match s {
         "i32" => make_deser::<i32>(),
+        "i64" => make_deser::<i64>(),
         _ => panic!("Unknown type {}", s),
     }
 }

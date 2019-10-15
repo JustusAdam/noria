@@ -286,7 +286,7 @@ pub fn new_grouped_function_from_string(
             },
         ).into(),
         // TODO Get the categories from somewhere
-        "click_ana" => {
+        "click_ana_manual" => {
             assert_eq!(over_cols.len(), 2);
             super::click_ana::ClickAna::new(
                 parent,

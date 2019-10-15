@@ -43,7 +43,11 @@ impl<A> FreeGroup<A> {
     //     }
     // }
 }
-pub(crate) type ClickAnaState = SpecialStateWrapper<MemoElem<iseq::Seq<i32>>>;
+pub(crate) type ClickAnaState = SpecialStateWrapper<MemoElem<iseq::Seq<I32Wrap>>>;
+
+#[derive(Debug, PartialOrd, Ord, PartialEq, Eq)]
+pub struct I32Wrap(pub i32);
+
 
 pub trait Computer {
     type Action;
@@ -53,12 +57,24 @@ pub trait Computer {
 }
 
 pub mod iseq {
+    pub (crate) type ClickAnaInner = Seq<i32>;
     #[derive(Debug)]
     pub struct Seq<T>(Vec<Interval<T>>);
 
     use common::SizeOf;
+    use super::I32Wrap;
 
     impl SizeOf for Seq<i32> {
+        fn size_of(&self) -> u64 {
+            std::mem::size_of::<Self>() as u64
+        }
+        fn deep_size_of(&self) -> u64 {
+            // TODO do a proper implementation here and find out if its even should have one
+            self.size_of()
+        }
+    }
+
+    impl SizeOf for Seq<I32Wrap> {
         fn size_of(&self) -> u64 {
             std::mem::size_of::<Self>() as u64
         }
@@ -74,17 +90,20 @@ pub mod iseq {
         }
     }
 
-    impl<T: std::fmt::Debug + std::cmp::Ord> super::Computer for Seq<T> {
-        type Action = Action<T>;
-        type Output = f64;
-        fn apply(&mut self, action: Self::Action, positive: bool) {
-            self.handle_helper(action, !positive)
+    use nom_sql::SqlType;
+    use crate::ops::ohua::Typed;
+
+    impl Typed for Seq<i32> {
+        type Type = SqlType;
+        fn typ_static() -> Self::Type {
+            SqlType::Double
         }
-        fn compute_new_value(&mut self) -> Self::Output {
-            let lens : Vec<usize> = self.complete_intervals().map(|i| i.elems.len()).collect();
-            let l = lens.len();
-            let sum : usize = lens.into_iter().sum();
-            sum as f64 / l as f64
+    }
+
+    impl Typed for Seq<I32Wrap> {
+        type Type = SqlType;
+        fn typ_static() -> Self::Type {
+            SqlType::Double
         }
     }
 
@@ -96,6 +115,10 @@ pub mod iseq {
     }
 
     impl<T: std::fmt::Debug> Interval<T> {
+        pub fn len(&self) -> usize {
+            self.elems.len()
+        }
+
         fn bounded(lower: T, upper: T, elems: Vec<T>) -> Interval<T>
         where
             T: std::cmp::Ord,
@@ -429,6 +452,24 @@ pub mod iseq {
     use super::FreeGroup;
 
     impl<T: std::cmp::Ord + std::fmt::Debug> Seq<T> {
+
+
+        pub fn apply(&mut self, action: Action<T>, positive: bool) {
+            self.handle_helper(action, !positive)
+        }
+
+        pub fn compute_new_value(&mut self) -> f64 {
+            let lens : Vec<usize> = self.complete_intervals().map(|i| i.elems.len()).collect();
+            let l = lens.len();
+            match l {
+                0 => 0.0,
+                _ => {
+                    let sum : usize = lens.into_iter().sum();
+                    sum as f64 / l as f64
+                }
+            }
+        }
+
         #[cfg(test)]
         fn from_intervals(intervals: Vec<Interval<T>>) -> Seq<T> {
             Seq(intervals)
@@ -516,7 +557,7 @@ pub mod iseq {
             }
         }
 
-        fn complete_intervals<'a>(&'a self) -> impl Iterator<Item = &'a Interval<T>> {
+        pub fn complete_intervals<'a>(&'a self) -> impl Iterator<Item = &'a Interval<T>> {
             self.0.iter().filter(|e| e.is_closed())
         }
 
@@ -560,19 +601,19 @@ pub mod iseq {
             match self.find_target_index(&bound) {
                 Ok(idx) => {
                     let ref mut target = self.0[idx];
-                    eprintln!("Targeting {}", target.draw());
+                    //eprintln!("Targeting {}", target.draw());
                     target.adjust_bound(bound, lower).map(|new_node| {
                         let iidx = if lower { idx } else { idx + 1 };
-                        eprintln!(
-                            "Inserting leftover interval at index {}\n{}",
-                            iidx,
-                            new_node.draw()
-                        );
+                        // eprintln!(
+                        //     "Inserting leftover interval at index {}\n{}",
+                        //     iidx,
+                        //     new_node.draw()
+                        // );
                         self.0.insert(iidx, new_node)
                     });
                 }
                 Err(idx) => {
-                    eprintln!("Inserting new interval at {}", idx);
+                    //eprintln!("Inserting new interval at {}", idx);
                     self.0.insert(
                         idx,
                         if lower {
