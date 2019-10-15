@@ -4,6 +4,7 @@ use sf ohua::sql::query::{group_by};
 use sf crate::state::ohua::sum::{ Sum, add, get_sum };
 use sf crate::state::ohua::count::{ Count, increment, get_value };
 use sf primitives::deref;
+use sf crate::fns::div_or_zero;
 
 
 //# declare-field user_id : i32
@@ -26,11 +27,11 @@ fn count(rows : RowStream) {
    acc.get_value()
 }
 
-fn sum_count(rows : RowStream<i32,i32>) {
-
+fn avg(rows : RowStream<i32,i32>) {
    for g in group_by(0, rows) {
-       ( count(g)
-       , sum(g)
+       div_or_zero(
+        sum(g)
+        , count(g)
        )
    }
 }
