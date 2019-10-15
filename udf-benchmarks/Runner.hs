@@ -2,14 +2,13 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, GADTs, LambdaCase,
   TypeApplications, NamedFieldPuns, RecordWildCards,
   ScopedTypeVariables, AllowAmbiguousTypes, ImplicitParams,
-  MultiWayIf #-}
+  MultiWayIf, ViewPatterns #-}
 
-import Control.Monad (replicateM, replicateM_, unless, when)
-import Data.Bifunctor (second)
-import Data.Foldable (for_)
-import Data.Hashable
-import Data.List (intercalate)
-import qualified Data.Map as Map
+import Control.Category ((>>>))
+import Control.Monad
+import Control.Monad.Writer (execWriterT, tell)
+import Data.Bifunctor (first, second)
+import Data.Foldable (foldr', for_)
 import Data.Traversable (for)
 import Options.Applicative
 import System.Directory
@@ -18,7 +17,11 @@ import System.IO (IOMode(WriteMode), hPutStrLn, withFile)
 import System.IO.Unsafe (unsafePerformIO)
 import System.Process
 import System.Random
+import System.Exit (exitSuccess)
 import Text.Printf (hPrintf, printf)
+import Control.Monad.IO.Class
+
+import Control.Exception (assert)
 
 type Results = [(String, [Word])]
 
@@ -35,14 +38,15 @@ data Bench
                , lookupRounds :: Word
                , lookupsPerRound :: Word
                , queries :: [String] }
-    | ClickstreamEvo 
-        { numUsers :: Word 
-        , eventRange :: (Word, Word)
-        , boundaryProb :: Float
-        , numLookups :: Word
-        , queries :: [String]
-        }
+    | ClickstreamEvo { numUsers :: Word
+                     , eventRange :: [(Word, Word)]
+                     , boundaryProb :: Float
+                     , numLookups :: Word
+                     , queries :: [String] }
     deriving (Read, Show)
+
+assertM :: Applicative m => Bool -> m ()
+assertM = flip assert (pure ())
 
 splitOn :: Char -> String -> [String]
 splitOn _ "" = []
@@ -67,6 +71,7 @@ runBenches outputFile =
             where runBench =
                       sumCompBench
                           "sum-count"
+                          "SumCount"
                           numGenRange
                           queries
                           outputFile
@@ -84,6 +89,7 @@ runBenches outputFile =
             where runBench =
                       sumCompBench
                           "sum-comp"
+                          "TabSum"
                           numGenRange
                           queries
                           outputFile
@@ -94,63 +100,92 @@ runBenches outputFile =
                           lookupRounds
                           lookupsPerRound
                           numSelectable
-        b@ClickstreamEvo{} ->  
-            clickstreamEvoGen fname lname b
-            compileAlgo "click_ana.ohuac"
-            buildRust
-            withFile outputFile WriteMode $ \h ->
-                replicateM repeat $ do
-                    for_ queries $ \query -> do
-                        let queryFile = printf "clickstream-evo/%s.sql" query
-                        ls <-
-                            readProcess
-                                "cargo"
-                                [ "run"
-                                , "--bin"
-                                , "features"
-                                , "--"
-                                , queryFile
-                                , fname
-                                , lfname
-                                ]
-                                ""
-                        for_ (lines ls) $ \line ->
-                            let l =  splitOn ',' lr
-                            hPrintf h "%s,%s,%i\n" query (l !! 0) (read $ l !! 2 :: Word)
+        ClickstreamEvo {..} -> do
+            compileAlgo "click_ana.ohuac" "click_ana"
+            withFile outputFile WriteMode $ \h -> do
+                hPutStrLn h "Version,Phase,Events,Time"
+                for_ eventRange $ \evr@(lo, hi) -> do
+                    clickstreamEvoGen
+                        fname
+                        lfname
+                        numUsers
+                        evr
+                        boundaryProb
+                        numLookups
+                    when genOnly $ exitSuccess
+                    replicateM_ (fromIntegral repeat) $
+                        for_ queries $ \query -> do
+                            let queryFile =
+                                    printf "clickstream-evo/%s.sql" query
+                            ls <-
+                                readProcess
+                                    "cargo"
+                                    [ "run"
+                                    , "--bin"
+                                    , "features"
+                                    , "--"
+                                    , queryFile
+                                    , fname
+                                    , lfname
+                                    ]
+                                    ""
+                            for_ (lines ls) $ \(splitOn ',' -> [phase, _, time]) ->
+                                hPrintf
+                                    h
+                                    "%s,%s,%i,%i\n"
+                                    query
+                                    phase
+                                    ((hi + lo) `div` 2)
+                                    (read time :: Word)
   where
-    fname = outputFile -<.> "data"
-    lfname = outputFile -<.> "lookups"
+    fname = outputFile -<.> "data.csv"
+    lfname = outputFile -<.> "lookups.csv"
     GenericOpts {..} = ?genericOpts
 
-weightedRandom :: [(Float, a)] -> IO a
-weightedRandom weights' = do
-    r <- randomRIO (0.0,1.0)
-    fromLeft $ foldr' (\(i,a) -> (>>= \acc -> let acc' = i + acc in if r < acc' then Left a else pure acc')) (Right 0) weights
+weightedRandom :: forall a m. MonadIO m => [(Float, a)] -> m a
+weightedRandom weights' = liftIO $ do
+    r <- randomRIO (0.0, 1.0)
+    let Left a =
+            foldr'
+                (\(i, a) ->
+                     (>>= \((i +) -> acc) ->
+                              if r < acc
+                                  then Left a
+                                  else pure acc))
+                (Right 0)
+                weights
+    pure a
   where
-    weights = map (first (/ sum (map fst weights'))) weights
+    weights = map (first (/ sum (map fst weights'))) weights'
 
-clickstreamEvoGen :: FilePath -> FilePath -> Bench -> IO ()
-clickstreamEvoGen fname lfname ClickstreamEvo {..} = do
+clickstreamEvoGen ::
+       FilePath -> FilePath -> Word -> (Word, Word) -> Float -> Word -> IO ()
+clickstreamEvoGen fname lfname numUsers eventRange boundaryProb numLookups = do
     withFile fname WriteMode $ \h -> do
         hPutStrLn h "#clicks"
-        hPutStrLn h "i32,i32,i64"
-        for_ [0..numUsers] $ \i -> do
-            hPrintf h "%i,2,0\n" i
+        hPutStrLn h "i32,i32,i32"
+        for_ [0 .. numUsers] $ \i -> do
+            hPrintf h "%i,2,0" i
             numEvents <- randomRIO eventRange
-            for_ [1..numEvents] $ \e -> do
+            for_ [1 .. numEvents] $ \e -> do
                 assertM $ not (boundaryProb >= 0.5)
-                ty <- weightedRandom [(boundaryProb, 0), (boundaryProb, 1), (1.0-2.0*boundaryProb,2)]
-                hPrintf h "%i,%i,%i\n" i e ty 
+                ty <-
+                    weightedRandom
+                        [ (boundaryProb, 0)
+                        , (boundaryProb, 1)
+                        , (1.0 - 2.0 * boundaryProb, 2)
+                        ]
+                hPrintf h "%i,%i,%i" i e (ty :: Int)
     withFile lfname WriteMode $ \h -> do
         hPutStrLn h "#clickstream_ana"
         hPutStrLn h "i32"
-        replicateM (fromIntegral numLookups) $ do
-            n <- randomRIO (0,numUsers)
+        replicateM_ (fromIntegral numLookups) $ do
+            n <- randomRIO (0, numUsers)
             hPutStrLn h (show n)
 
-
 sumCompGen ::
-       FilePath
+       String
+    -> FilePath
     -> FilePath
     -> (Int, Int)
     -> Word
@@ -158,7 +193,7 @@ sumCompGen ::
     -> Word
     -> (Word, Word)
     -> IO ()
-sumCompGen fname lfname valueLimit lookupRounds lookupsPerRound numSelectable numGenRange = do
+sumCompGen tabName fname lfname valueLimit lookupRounds lookupsPerRound numSelectable numGenRange = do
     withFile fname WriteMode $ \h -> do
         hPutStrLn h "#Tab"
         hPutStrLn h "i32,i32"
@@ -169,44 +204,42 @@ sumCompGen fname lfname valueLimit lookupRounds lookupsPerRound numSelectable nu
                 val <- randomRIO valueLimit
                 hPrintf h "%i,%i\n" i val
     withFile lfname WriteMode $ \h -> do
-        hPutStrLn h "#TabSum"
+        hPutStrLn h $ "#" <> tabName
         hPutStrLn h "i32"
         replicateM_ (fromIntegral lookupRounds) $
             replicateM (fromIntegral lookupsPerRound) $ do
-                n <- randomRIO (0,numSelectable)
+                n <- randomRIO (0, numSelectable)
                 hPutStrLn h (show n)
 
-compileAlgo :: 
-       (?genericOpts :: GenericOpts)
-        => FilePath -> IO ()
-compileAlgo algoFile = do
+compileAlgo :: (?genericOpts :: GenericOpts) => FilePath -> FilePath -> IO ()
+compileAlgo algoFile entrypoint = unless (genOnly ?genericOpts) $ do
     algoSource <- makeAbsolute algoFile
-    readCreateProcess
-        (proc
-             "ohuac"
-             [ "build"
-             , "-g"
-             , "noria-udf"
-             , algoSource
-             , "sum_count"
-             , "-v"
-             , "--debug"
-             ])
-            {cwd = Just noriaDir}
-        ""
+    void $
+        readCreateProcess
+            (proc
+                 "ohuac"
+                 [ "build"
+                 , "-g"
+                 , "noria-udf"
+                 , algoSource
+                 , entrypoint
+                 , "-v"
+                 , "--debug"
+                 ])
+                {cwd = Just noriaDir}
+            ""
 
-buildRust :: 
-       (?genericOpts :: GenericOpts)
-       => IO ()
-buildRust = 
-    callProcess "cargo" buildArgs
-  where buildArgs
-            | noRelease = ["build"]
-            | otherwise = ["build", "--release"]
+buildRust :: (?genericOpts :: GenericOpts) => IO ()
+buildRust = callProcess "cargo" buildArgs
+  where
+    buildArgs
+        | noRelease ?genericOpts = ["build"]
+        | otherwise = ["build", "--release"]
 
 sumCompBench ::
        (?genericOpts :: GenericOpts)
     => String
+    -> String
     -> [(Word, Word)]
     -> [String]
     -> FilePath
@@ -218,45 +251,41 @@ sumCompBench ::
     -> Word
     -> Word
     -> IO ()
-sumCompBench queryBaseName numGenRange queries outputFile fname lfname repeat valueLimit lookupRounds lookupsPerRound numSelectable = do
-    compileAlgo "sum_count.ohuac"
-    buildRust
-    res <-
-        for numGenRange $ \n -> do
+sumCompBench queryBaseName tabName numGenRange queries outputFile fname lfname repeat valueLimit lookupRounds lookupsPerRound numSelectable = do
+    compileAlgo "sum_count.ohuac" "sum_count"
+    withFile outputFile WriteMode $ \h -> do
+        hPutStrLn h "Phase,Lang,Items,Time"
+        for_ numGenRange $ \n@(lo, hi) -> do
+            let items = (lo + hi) `div` 2
             gen n
-            for queries $ \query ->
-                replicateM (fromIntegral repeat) $ do
-                    let queryFile = printf "%s-%s.sql" queryBaseName query
-                    ls <-
-                        readProcess
-                            "cargo"
-                            [ "run"
-                            , "--bin"
-                            , "features"
-                            , "--"
-                            , queryFile
-                            , fname
-                            , lfname
-                            ]
-                            ""
-                    pure
-                        [ (l !! 0, read $ l !! 2 :: Int)
-                        | lr <- lines ls
-                        , let l = splitOn ',' lr
+            for_ queries $ \query ->
+                replicateM_ (fromIntegral repeat) $
+                let queryFile = printf "%s/%s.sql" queryBaseName query
+                 in readProcess
+                        "cargo"
+                        [ "run"
+                        , "--bin"
+                        , "features"
+                        , "--"
+                        , queryFile
+                        , fname
+                        , lfname
                         ]
-    writeFile
-        outputFile
-        (unlines $
-         "Phase,Lang,Items,Time" :
-         [ printf "%s,%s,%i,%i" phase lang items time
-         | (items, qs) <- zip (map ((+ 30) . fst) numGenRange) res
-         , (lang, runs) <- zip queries qs
-         , dat <- runs
-         , (phase, time) <- dat
-         ])
+                        "" >>=
+                    mapM_
+                        (\(splitOn ',' -> [phase, _, time]) ->
+                             hPrintf
+                                 h
+                                 "%s,%s,%i,%i\n"
+                                 phase
+                                 query
+                                 items
+                                 (read time :: Word)) .
+                    lines
   where
     gen =
         sumCompGen
+            tabName
             fname
             lfname
             valueLimit
@@ -267,20 +296,15 @@ sumCompBench queryBaseName numGenRange queries outputFile fname lfname repeat va
 
 noriaDir :: (?genericOpts :: GenericOpts) => FilePath
 noriaDir =
-    unsafePerformIO $ do
-        case noriaDirectory of
-            Just dir -> pure dir
-            Nothing ->
-                let go dir = do
-                        arrived <-
-                            ("noria-server" `elem`) <$> getDirectoryContents dir
-                        if | arrived -> pure dir
-                           | dir == "/" ->
-                               fail
-                                   "Expected to be in a noria subdirectory, or the directory to be provided"
-                           | otherwise -> go (takeDirectory dir)
-                 in getCurrentDirectory >>= go
+    unsafePerformIO $ maybe (getCurrentDirectory >>= go) pure noriaDirectory
   where
+    go dir = do
+        arrived <- ("noria-server" `elem`) <$> getDirectoryContents dir
+        if | arrived -> pure dir
+           | dir == "/" ->
+               fail
+                   "Expected to be in a noria subdirectory, or the directory to be provided"
+           | otherwise -> go (takeDirectory dir)
     GenericOpts {..} = ?genericOpts
 
 data Opts = Opts

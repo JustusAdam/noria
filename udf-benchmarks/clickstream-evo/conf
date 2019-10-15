@@ -1,7 +1,7 @@
-ClickstreamEvo 
+ClickstreamEvo
     { numUsers = 1000
-    , eventRange = (100,150)
+    , eventRange = [(100,150),(200,300),(400,600)]
     , boundaryProb = 0.1
     , numLookups = 100
-    , queries = ["pure_sql"]
+    , queries = ["manual", "partial_ohua", "full_ohua"]
     }
