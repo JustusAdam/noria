@@ -388,7 +388,7 @@ fn classify_conditionals(
                                         join.push(join_ct);
                                     } else {
                                         // non-equi-join?
-                                        unimplemented!();
+                                        unimplemented!("{:?}", ct);
                                     }
                                 } else {
                                     // not a comma join, just an ordinary comparison with a

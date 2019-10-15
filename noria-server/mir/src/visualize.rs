@@ -44,12 +44,18 @@ impl GraphViz for MirQuery {
             for child in n.borrow().children.iter() {
                 let nd = child.borrow().versioned_name();
                 writeln!(out, "\"{}\" -> \"{}\"", n.borrow().versioned_name(), nd)?;
-                let in_edges = if in_edge_counts.contains_key(&nd) {
+                let is_recorded = in_edge_counts.contains_key(&nd);
+                let in_edges = if is_recorded {
                     in_edge_counts[&nd]
                 } else {
                     child.borrow().ancestors.len()
                 };
-                assert!(in_edges >= 1);
+                assert!(
+                    in_edges >= 1,
+                    "No ancestors for node {} (ancestor: {})",
+                    nd,
+                    n.borrow().versioned_name()
+                );
                 if in_edges == 1 {
                     // last edge removed
                     node_queue.push_back(child.clone());

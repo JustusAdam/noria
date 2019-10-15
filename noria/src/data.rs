@@ -376,7 +376,7 @@ impl Into<i32> for DataType {
         if let DataType::Int(s) = self {
             s
         } else {
-            unreachable!();
+            unreachable!("{:?}", self);
         }
     }
 }
