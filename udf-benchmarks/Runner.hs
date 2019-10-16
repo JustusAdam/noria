@@ -2,7 +2,7 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, GADTs, LambdaCase,
   TypeApplications, NamedFieldPuns, RecordWildCards,
   ScopedTypeVariables, AllowAmbiguousTypes, ImplicitParams,
-  MultiWayIf, ViewPatterns #-}
+  MultiWayIf, ViewPatterns, TupleSections #-}
 
 import Control.Category ((>>>))
 import Control.Monad
@@ -16,10 +16,19 @@ import System.FilePath
 import System.IO (IOMode(WriteMode), hPutStrLn, withFile, hPrint)
 import System.IO.Unsafe (unsafePerformIO)
 import System.Process
+import System.Environment
 import System.Random
-import System.Exit (exitSuccess)
+import System.Exit (exitSuccess, ExitCode( ExitFailure ))
 import Text.Printf (hPrintf, printf)
 import Control.Monad.IO.Class
+import qualified Data.HashTable.ST.Linear as HT (new)
+import qualified Data.HashTable.Class as HT hiding (new)
+import qualified Data.IntMap as IM
+import Control.Monad.ST (runST)
+import Data.Maybe (fromMaybe, mapMaybe)
+import Data.Function ((&))
+
+import Debug.Trace
 
 import Control.Exception (assert)
 
@@ -111,30 +120,94 @@ runBenches outputFile =
                         boundaryProb
                         numLookups
                     when genOnly exitSuccess
+                    handlerFunc <-
+                        if isVerify
+                            then do
+                                expected <-
+                                    do f <- readFile fname
+                                       let dat =
+                                               mapMaybe
+                                                   (\case
+                                                        (splitOn ',' -> [uid, cat, ts]) ->
+                                                            Just
+                                                                ( read uid :: Int
+                                                                , read cat :: Int
+                                                                , read ts :: Word)
+                                                        other ->
+                                                            trace
+                                                                ("Unparseable data: " <>
+                                                                 other)
+                                                                Nothing) $
+                                               drop 2 $ lines f
+                                       pure $
+                                           runST $ do
+                                               tab <- HT.new
+                                               forM_ dat $ \(uid, cat, ts) ->
+                                                   HT.mutate
+                                                       tab
+                                                       uid
+                                                       (\(fromMaybe
+                                                              ([], Nothing) -> v@(stack, counter)) ->
+                                                            (, ()) $
+                                                            Just $
+                                                            case cat of
+                                                                1 ->
+                                                                    ( stack
+                                                                    , Just
+                                                                          (0 :: Word))
+                                                                2 ->
+                                                                    ( maybe
+                                                                          id
+                                                                          (:)
+                                                                          counter
+                                                                          stack
+                                                                    , Nothing)
+                                                                _ ->
+                                                                    ( stack
+                                                                    , (+ 1) <$>
+                                                                      counter))
+                                               l <- HT.toList tab
+                                               pure $
+                                                   IM.fromList $
+                                                   map
+                                                       (second $ \(st, _) ->
+                                                            if null st
+                                                                then 0.0
+                                                                else fromIntegral
+                                                                         (sum st) /
+                                                                     fromIntegral
+                                                                         (length
+                                                                              st))
+                                                       l
+                                pure $
+                                    const $ \case
+                                        (splitOn ',' -> [(read -> key), (read -> val)]) ->
+                                            let precalc =
+                                                    expected IM.! key :: Double
+                                             in printf
+                                                    "%v, %i, %f, %f\n"
+                                                    (show $ precalc == val)
+                                                    key
+                                                    precalc
+                                                    val
+                                        other ->
+                                            putStrLn $ "Unparseable: " <> other
+                            else pure $ \query (splitOn ',' -> [phase, _, time]) ->
+                                     hPrintf
+                                         h
+                                         "%s,%s,%i,%i\n"
+                                         query
+                                         phase
+                                         ((hi + lo) `div` 2)
+                                         (read time :: Word)
                     replicateM_ (fromIntegral repeat) $
                         for_ queries $ \query -> do
                             let queryFile =
                                     printf "clickstream-evo/%s.sql" query
-                            ls <-
-                                readProcess
-                                    "cargo"
-                                    [ "run"
-                                    , "--bin"
-                                    , "features"
-                                    , "--"
-                                    , queryFile
-                                    , fname
-                                    , lfname
-                                    ]
-                                    ""
-                            for_ (lines ls) $ \(splitOn ',' -> [phase, _, time]) ->
-                                hPrintf
-                                    h
-                                    "%s,%s,%i,%i\n"
-                                    query
-                                    phase
-                                    ((hi + lo) `div` 2)
-                                    (read time :: Word)
+                            rustCommand
+                                ["run", "--bin", "features"]
+                                [queryFile, fname, lfname] >>=
+                                mapM_ (handlerFunc query) . lines
   where
     fname = outputFile -<.> "data.csv"
     lfname = outputFile -<.> "lookups.csv"
@@ -163,17 +236,17 @@ clickstreamEvoGen fname lfname numUsers eventRange boundaryProb numLookups = do
         hPutStrLn h "#clicks"
         hPutStrLn h "i32,i32,i32"
         for_ [0 .. numUsers] $ \i -> do
-            hPrintf h "%i,2,0" i
+            hPrintf h "%i,2,0\n" i
             numEvents <- randomRIO eventRange
             for_ [1 .. numEvents] $ \e -> do
                 assertM $ not (boundaryProb >= 0.5)
                 ty <-
                     weightedRandom
-                        [ (boundaryProb, 0)
-                        , (boundaryProb, 1)
-                        , (1.0 - 2.0 * boundaryProb, 2)
+                        [ (boundaryProb, 1)
+                        , (boundaryProb, 2)
+                        , (1.0 - 2.0 * boundaryProb, 0)
                         ]
-                hPrintf h "%i,%i,%i" i e (ty :: Int)
+                hPrintf h "%i,%i,%i\n" i (ty :: Int) e
     withFile lfname WriteMode $ \h -> do
         hPutStrLn h "#clickstream_ana"
         hPutStrLn h "i32"
@@ -227,12 +300,23 @@ compileAlgo algoFile entrypoint = unless (genOnly ?genericOpts) $ do
                 {cwd = Just noriaDir}
             ""
 
-buildRust :: (?genericOpts :: GenericOpts) => IO ()
-buildRust = callProcess "cargo" buildArgs
+rustCommand :: (?genericOpts :: GenericOpts) => [String] -> [String] -> IO String
+rustCommand cargoArgs binArgs0 = do
+    fenv <- buildEnv
+    readCreateProcess
+        (proc "cargo" (cargoArgs <> buildArgs <> binArgs)) {env = fenv} ""
   where
+    binArgs =
+        case binArgs0 of
+            [] -> binArgs0
+            _ -> "--" : binArgs0
+    GenericOpts {..} = ?genericOpts
     buildArgs
-        | noRelease ?genericOpts = ["build"]
-        | otherwise = ["build", "--release"]
+        | noRelease = []
+        | otherwise = ["--release"]
+    buildEnv
+        | isVerify = Just . (("VERIFY", "1") :) <$> getEnvironment
+        | otherwise = pure Nothing
 
 sumCompBench ::
        (?genericOpts :: GenericOpts)
@@ -255,30 +339,57 @@ sumCompBench queryBaseName tabName numGenRange queries outputFile fname lfname v
         for_ numGenRange $ \n@(lo, hi) -> do
             let items = (lo + hi) `div` 2
             gen n
-            for_ queries $ \query ->
-                replicateM_ (fromIntegral repeat) $
-                let queryFile = printf "%s/%s.sql" queryBaseName query
-                 in readProcess
-                        "cargo"
-                        [ "run"
-                        , "--bin"
-                        , "features"
-                        , "--"
-                        , queryFile
-                        , fname
-                        , lfname
-                        ]
-                        "" >>=
-                    mapM_
-                        (\(splitOn ',' -> [phase, _, time]) ->
+            handlerFunc <-
+                if isVerify
+                    then do
+                        expected <-
+                            do dat <- readFile fname
+                               pure $
+                                   mapMaybe
+                                       (\case
+                                            (splitOn ',' -> [(read -> k), (read -> v)]) ->
+                                                Just (k, [v :: Int])
+                                            other ->
+                                                trace
+                                                    ("Unparseable data: " <>
+                                                     other)
+                                                    Nothing)
+                                       (drop 2 $ lines dat) &
+                                   IM.fromListWith (<>) &
+                                   fmap
+                                       (\v ->
+                                            fromIntegral (sum v) /
+                                            fromIntegral (length v))
+                        pure $
+                            const $ \case
+                                (splitOn ',' -> [(read -> key), (read -> val)]) ->
+                                    let precalc = expected IM.! key :: Double
+                                     in printf
+                                            "%v,%f,%f\n"
+                                            (show $ precalc == val)
+                                            precalc
+                                            val
+                                other -> putStrLn $ "Unparseable: " <> other
+                    else pure $ \query (splitOn ',' -> [phase, _, time]) ->
                              hPrintf
                                  h
                                  "%s,%s,%i,%i\n"
                                  phase
                                  query
                                  items
-                                 (read time :: Word)) .
-                    lines
+                                 (read time :: Word)
+            for_ queries $ \query ->
+                replicateM_ (fromIntegral repeat) $
+                let queryFile = printf "%s/%s.sql" queryBaseName query
+                 in rustCommand
+                        [ "run"
+                        , "--bin"
+                        , "features"]
+                        [ queryFile
+                        , fname
+                        , lfname
+                        ] >>=
+                    mapM_ (handlerFunc query) . lines
   where
     gen =
         sumCompGen
@@ -315,6 +426,7 @@ data GenericOpts = GenericOpts
     , genOnly :: Bool
     , repeat :: Word
     , noriaDirectory :: Maybe FilePath
+    , isVerify :: Bool
     }
 
 acParser :: ParserInfo Opts
@@ -335,7 +447,8 @@ acParser = info (helper <*> p) fullDesc
         option auto (long "repeat" <> value 1 <> help "Do multiple runs") <*>
         optional
             (strOption $
-             long "noria-dir" <> help "Explicitly point to the noria dir")
+             long "noria-dir" <> help "Explicitly point to the noria dir") <*>
+        switch (long "verify" <> help "Verify output instead of measuring")
 
 main :: IO ()
 main =
