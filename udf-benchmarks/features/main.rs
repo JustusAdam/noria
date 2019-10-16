@@ -96,6 +96,12 @@ fn get_data() -> (String, Vec<TaggedRows>, TaggedRows) {
     (exp_query, processed_data, (lookup_label, processed_lookups))
 }
 
+const SETUP_FOR_VERIFY_STR: Option<&'static str> = option_env!("VERIFY");
+
+fn is_setup_for_verify() -> bool {
+    SETUP_FOR_VERIFY_STR.is_some()
+}
+
 fn main() {
     let (query, data, lookups) = get_data();
     eprintln!("Finished parsing input data");
@@ -112,7 +118,9 @@ fn main() {
             .perform_all(data.into_iter().map(TableOperation::Insert))
             .unwrap();
         let t1 = Instant::now();
-        println!("load,{},{}", table_name, (t1 - t0).as_nanos());
+        if !is_setup_for_verify() {
+            println!("load,{},{}", table_name, (t1 - t0).as_nanos())
+        };
     }
 
     eprintln!("Finished loading data");
@@ -124,10 +132,21 @@ fn main() {
 
     for i in lookup_data.drain(..) {
         let res = query.lookup(&i, true).unwrap();
-        //eprintln!("{} => {}", i, res[0][1]);
+        if is_setup_for_verify() {
+            let k :i32 = (&i[0]).clone().into();
+            let v :f64 = if res.len() == 0 {
+                0.0
+            } else {
+                assert_eq!(res.len(),1);
+                (&res[0][1]).into()
+            };
+            println!("{},{}", k, v);
+        }
     }
     let t1 = Instant::now();
-    println!("lookup,{},{}", view_name, (t1 - t0).as_nanos());
+    if !is_setup_for_verify() {
+        println!("lookup,{},{}", view_name, (t1 - t0).as_nanos())
+    };
 
     eprintln!("Finished running queries");
 }
