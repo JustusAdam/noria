@@ -2,57 +2,58 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, GADTs, LambdaCase,
   TypeApplications, NamedFieldPuns, RecordWildCards,
   ScopedTypeVariables, AllowAmbiguousTypes, ImplicitParams,
-  MultiWayIf, ViewPatterns, TupleSections #-}
+  MultiWayIf, ViewPatterns, TupleSections, DuplicateRecordFields #-}
 
 import Control.Category ((>>>))
 import Control.Monad
+import Control.Monad.IO.Class
+import Control.Monad.ST (runST)
 import Control.Monad.Writer (execWriterT, tell)
 import Data.Bifunctor (first, second)
 import Data.Foldable (foldr', for_)
+import Data.Function ((&))
+import qualified Data.HashTable.Class as HT hiding (new)
+import qualified Data.HashTable.ST.Linear as HT (new)
+import qualified Data.IntMap as IM
+import Data.Maybe (fromMaybe, mapMaybe)
 import Data.Traversable (for)
 import Options.Applicative
 import System.Directory
+import System.Environment
+import System.Exit (ExitCode(ExitFailure), exitSuccess)
 import System.FilePath
-import System.IO (IOMode(WriteMode), hPutStrLn, withFile, hPrint)
+import System.IO (IOMode(WriteMode), hPrint, hPutStrLn, withFile)
 import System.IO.Unsafe (unsafePerformIO)
 import System.Process
-import System.Environment
 import System.Random
-import System.Exit (exitSuccess, ExitCode( ExitFailure ))
 import Text.Printf (hPrintf, printf)
-import Control.Monad.IO.Class
-import qualified Data.HashTable.ST.Linear as HT (new)
-import qualified Data.HashTable.Class as HT hiding (new)
-import qualified Data.IntMap as IM
-import Control.Monad.ST (runST)
-import Data.Maybe (fromMaybe, mapMaybe)
-import Data.Function ((&))
 
 import Debug.Trace
 
 import Control.Exception (assert)
 
-type Results = [(String, [Word])]
-
 data Bench
-    = SumComparison { numSelectable :: Word
-                    , numGenRange :: [(Word, Word)]
-                    , valueLimit :: (Int, Int)
-                    , lookupRounds :: Word
-                    , lookupsPerRound :: Word
-                    , queries :: [String] }
-    | SumCount { numSelectable :: Word
-               , numGenRange :: [(Word, Word)]
-               , valueLimit :: (Int, Int)
-               , lookupRounds :: Word
-               , lookupsPerRound :: Word
-               , queries :: [String] }
-    | ClickstreamEvo { numUsers :: Word
-                     , eventRange :: [(Word, Word)]
-                     , boundaryProb :: Float
-                     , numLookups :: Word
-                     , queries :: [String] }
-    deriving (Read, Show)
+    = SumComparison' SumComparison
+    | SumCount' SumComparison
+    | ClickstreamEvo' ClickstreamEvo
+    deriving (Read)
+
+data SumComparison = SumComparison
+    { numSelectable :: Word
+    , numGenRange :: [(Word, Word)]
+    , valueLimit :: (Int, Int)
+    , lookupRounds :: Word
+    , lookupsPerRound :: Word
+    , queries :: [String]
+    } deriving (Read)
+
+data ClickstreamEvo = ClickstreamEvo
+    { numUsers :: Word
+    , eventRange :: [(Word, Word)]
+    , boundaryProb :: Float
+    , numLookups :: Word
+    , queries :: [String]
+    } deriving (Read)
 
 assertM :: Applicative m => Bool -> m ()
 assertM = flip assert (pure ())
@@ -70,174 +71,131 @@ splitOn c s =
   where
     cons ~(h, t) = h : t
 
-runBenches :: (?genericOpts :: GenericOpts) => FilePath -> Bench -> IO ()
-runBenches outputFile =
-    \case
-        SumCount {..} -> do
-            ex <- doesFileExist fname
-    --when (forceRegen || genOnly || not ex) $ gen
-            unless genOnly runBench
-            where runBench =
-                      sumCompBench
-                          "avg"
-                          "SumCount"
-                          numGenRange
-                          queries
-                          outputFile
-                          fname
-                          lfname
-                          valueLimit
-                          lookupRounds
-                          lookupsPerRound
-                          numSelectable
-        SumComparison {..} -> do
-            ex <- doesFileExist fname
-    --when (forceRegen || genOnly || not ex) $ gen
-            unless genOnly runBench
-            where runBench =
-                      sumCompBench
-                          "sum-comp"
-                          "TabSum"
-                          numGenRange
-                          queries
-                          outputFile
-                          fname
-                          lfname
-                          valueLimit
-                          lookupRounds
-                          lookupsPerRound
-                          numSelectable
-        ClickstreamEvo {..} -> do
-            compileAlgo "click_ana.ohuac" "click_ana"
-            withFile outputFile WriteMode $ \h -> do
-                hPutStrLn h "Version,Phase,Events,Time"
-                for_ eventRange $ \evr@(lo, hi) -> do
-                    clickstreamEvoGen
-                        fname
-                        lfname
-                        numUsers
-                        evr
-                        boundaryProb
-                        numLookups
-                    when genOnly exitSuccess
-                    handlerFunc <-
-                        if isVerify
-                            then do
-                                expected <-
-                                    do f <- readFile fname
-                                       let dat =
-                                               mapMaybe
-                                                   (\case
-                                                        (splitOn ',' -> [uid, cat, ts]) ->
-                                                            Just
-                                                                ( read uid :: Int
-                                                                , read cat :: Int
-                                                                , read ts :: Word)
-                                                        other ->
-                                                            trace
-                                                                ("Unparseable data: " <>
-                                                                 other)
-                                                                Nothing) $
-                                               drop 2 $ lines f
-                                       pure $
-                                           runST $ do
-                                               tab <- HT.new
-                                               forM_ dat $ \(uid, cat, ts) ->
-                                                   HT.mutate
-                                                       tab
-                                                       uid
-                                                       (\(fromMaybe
-                                                              ([], Nothing) -> v@(stack, counter)) ->
-                                                            (, ()) $
-                                                            Just $
-                                                            case cat of
-                                                                1 ->
-                                                                    ( stack
-                                                                    , Just
-                                                                          (0 :: Word))
-                                                                2 ->
-                                                                    ( maybe
-                                                                          id
-                                                                          (:)
-                                                                          counter
-                                                                          stack
-                                                                    , Nothing)
-                                                                _ ->
-                                                                    ( stack
-                                                                    , (+ 1) <$>
-                                                                      counter))
-                                               l <- HT.toList tab
-                                               pure $
-                                                   IM.fromList $
-                                                   map
-                                                       (second $ \(st, _) ->
-                                                            if null st
-                                                                then 0.0
-                                                                else fromIntegral
-                                                                         (sum st) /
-                                                                     fromIntegral
-                                                                         (length
-                                                                              st))
-                                                       l
-                                pure $
-                                    const $ \case
-                                        (splitOn ',' -> [(read -> key), (read -> val)]) ->
-                                            let precalc =
-                                                    expected IM.! key :: Double
-                                             in printf
-                                                    "%v, %i, %f, %f\n"
-                                                    (show $ precalc == val)
-                                                    key
-                                                    precalc
-                                                    val
-                                        other ->
-                                            putStrLn $ "Unparseable: " <> other
-                            else pure $ \query (splitOn ',' -> [phase, _, time]) ->
-                                     hPrintf
-                                         h
-                                         "%s,%s,%i,%i\n"
-                                         query
-                                         phase
-                                         ((hi + lo) `div` 2)
-                                         (read time :: Word)
-                    replicateM_ (fromIntegral repeat) $
-                        for_ queries $ \query -> do
-                            let queryFile =
-                                    printf "clickstream-evo/%s.sql" query
-                            rustCommand
-                                ["run", "--bin", "features"]
-                                [queryFile, fname, lfname] >>=
-                                mapM_ (handlerFunc query) . lines
-  where
-    fname = outputFile -<.> "data.csv"
-    lfname = outputFile -<.> "lookups.csv"
-    GenericOpts {..} = ?genericOpts
+dataFile :: (?outputFile :: FilePath) => FilePath
+dataFile = ?outputFile -<.> "data.csv"
 
-weightedRandom :: forall a m. MonadIO m => [(Float, a)] -> m a
-weightedRandom weights' = liftIO $ do
-    r <- randomRIO (0.0, 1.0)
-    let Left a =
-            foldr'
-                (\(i, a) ->
-                     (>>= \((i +) -> acc) ->
-                              if r < acc
-                                  then Left a
-                                  else pure acc))
-                (Right 0)
-                weights
-    pure a
+lookupFile :: (?outputFile :: FilePath) => FilePath
+lookupFile = ?outputFile -<.> "lookups.csv"
+
+runBenches ::
+       (?genericOpts :: GenericOpts, ?outputFile :: FilePath)
+    => Bench
+    -> IO ()
+runBenches =
+    \case
+        SumCount' a -> sumCompBench "avg" "SumCount" a
+        SumComparison' a -> sumCompBench "sum-comp" "TabSum" a
+        ClickstreamEvo' a -> clickStreamEvoBench a
+
+clickStreamEvoBench ::
+       (?genericOpts :: GenericOpts, ?outputFile :: FilePath)
+    => ClickstreamEvo
+    -> IO ()
+clickStreamEvoBench eg@ClickstreamEvo {..} = do
+    compileAlgo "click_ana.ohuac" "click_ana"
+    withFile ?outputFile WriteMode $ \h -> do
+        hPutStrLn h "Version,Phase,Events,Time"
+        for_ eventRange $ \evr -> do
+            clickstreamEvoGen eg evr
+            when genOnly exitSuccess
+            handlerFunc <- mkHandlerFunc evr
+            replicateM_ (fromIntegral repeat) $
+                for_ queries $ \query -> do
+                    let queryFile = printf "clickstream-evo/%s.sql" query
+                    rustCommand
+                        ["run", "--bin", "features"]
+                        [queryFile, dataFile, lookupFile] >>=
+                        mapM_ (handlerFunc query h) . lines
+  where
+    GenericOpts {..} = ?genericOpts
+    imperativeClickStream dat = do
+        tab <- HT.new
+        forM_ dat $ \(uid, cat, _ts) ->
+            -- Not using `ts` because in the data generates timestamps in order
+            HT.mutate
+                tab
+                uid
+                (\(fromMaybe ([], Nothing) -> (stack, counter)) ->
+                     (, ()) $
+                     Just $
+                     case cat of
+                         1 -> (stack, Just (0 :: Word))
+                         2 -> (maybe id (:) counter stack, Nothing)
+                         _ -> (stack, (+ 1) <$> counter))
+        l <- HT.toList tab
+        pure $
+            IM.fromList $
+            map
+                (second $ \(st, _) ->
+                     if null st
+                         then 0.0
+                         else fromIntegral (sum st) / fromIntegral (length st))
+                l
+    mkHandlerFunc (lo,hi)
+        | isVerify = do
+            f <- readFile dataFile
+            let dat =
+                    mapMaybe
+                        (\case
+                             (splitOn ',' -> [uid, cat, ts]) ->
+                                 Just
+                                     ( read uid :: Int
+                                     , read cat :: Int
+                                     , read ts :: Word)
+                             other ->
+                                 trace ("Unparseable data: " <> other) Nothing) $
+                    drop 2 $ lines f
+            let expected = runST (imperativeClickStream dat)
+            pure $
+                \_ _ -> \case
+                    (splitOn ',' -> [read -> key, read -> val]) ->
+                        let precalc = expected IM.! key :: Double
+                         in printf
+                                "%v, %i, %f, %f\n"
+                                (show $ precalc == val)
+                                key
+                                precalc
+                                val
+                    other -> putStrLn $ "Unparseable: " <> other
+        | otherwise =
+            pure $ \query h (splitOn ',' -> [phase, _, time]) ->
+                hPrintf
+                    h
+                    "%s,%s,%i,%i\n"
+                    query
+                    phase
+                    ((hi + lo) `div` 2)
+                    (read time :: Word)
+
+weightedRandom ::
+       forall a m. MonadIO m
+    => [(Float, a)]
+    -> m a
+weightedRandom weights' =
+    liftIO $ do
+        r <- randomRIO (0.0, 1.0)
+        let Left a =
+                foldr'
+                    (\(i, a) ->
+                         (>>= \((i +) -> acc) ->
+                                  if r < acc
+                                      then Left a
+                                      else pure acc))
+                    (Right 0)
+                    weights
+        pure a
   where
     weights = map (first (/ sum (map fst weights'))) weights'
 
 clickstreamEvoGen ::
-       FilePath -> FilePath -> Word -> (Word, Word) -> Float -> Word -> IO ()
-clickstreamEvoGen fname lfname numUsers eventRange boundaryProb numLookups = do
-    withFile fname WriteMode $ \h -> do
+       (?outputFile :: FilePath) => ClickstreamEvo -> (Word, Word) -> IO ()
+clickstreamEvoGen ClickstreamEvo {..} eventRange' = do
+    withFile dataFile WriteMode $ \h -> do
         hPutStrLn h "#clicks"
         hPutStrLn h "i32,i32,i32"
         for_ [0 .. numUsers] $ \i -> do
             hPrintf h "%i,2,0\n" i
-            numEvents <- randomRIO eventRange
+            numEvents <- randomRIO eventRange'
             for_ [1 .. numEvents] $ \e -> do
                 assertM $ not (boundaryProb >= 0.5)
                 ty <-
@@ -247,7 +205,7 @@ clickstreamEvoGen fname lfname numUsers eventRange boundaryProb numLookups = do
                         , (1.0 - 2.0 * boundaryProb, 0)
                         ]
                 hPrintf h "%i,%i,%i\n" i (ty :: Int) e
-    withFile lfname WriteMode $ \h -> do
+    withFile lookupFile WriteMode $ \h -> do
         hPutStrLn h "#clickstream_ana"
         hPutStrLn h "i32"
         replicateM_ (fromIntegral numLookups) $ do
@@ -255,26 +213,22 @@ clickstreamEvoGen fname lfname numUsers eventRange boundaryProb numLookups = do
             hPrint h n
 
 sumCompGen ::
-       String
-    -> FilePath
-    -> FilePath
-    -> (Int, Int)
-    -> Word
-    -> Word
-    -> Word
+       (?outputFile :: FilePath)
+    => String
+    -> SumComparison
     -> (Word, Word)
     -> IO ()
-sumCompGen tabName fname lfname valueLimit lookupRounds lookupsPerRound numSelectable numGenRange = do
-    withFile fname WriteMode $ \h -> do
+sumCompGen tabName SumComparison {..} ngr = do
+    withFile dataFile WriteMode $ \h -> do
         hPutStrLn h "#Tab"
         hPutStrLn h "i32,i32"
         for_ [0 .. numSelectable] $ \i -> hPrintf h "%i,0\n" i
         for_ [0 .. numSelectable] $ \i -> do
-            toGen <- randomRIO valueLimit
+            toGen <- randomRIO ngr
             replicateM_ (fromIntegral toGen) $ do
                 val <- randomRIO valueLimit
                 hPrintf h "%i,%i\n" i val
-    withFile lfname WriteMode $ \h -> do
+    withFile lookupFile WriteMode $ \h -> do
         hPutStrLn h $ "#" <> tabName
         hPutStrLn h "i32"
         replicateM_ (fromIntegral lookupRounds) $
@@ -283,28 +237,31 @@ sumCompGen tabName fname lfname valueLimit lookupRounds lookupsPerRound numSelec
                 hPutStrLn h (show n)
 
 compileAlgo :: (?genericOpts :: GenericOpts) => FilePath -> FilePath -> IO ()
-compileAlgo algoFile entrypoint = unless (genOnly ?genericOpts) $ do
-    algoSource <- makeAbsolute algoFile
-    void $
-        readCreateProcess
-            (proc
-                 "ohuac"
-                 [ "build"
-                 , "-g"
-                 , "noria-udf"
-                 , algoSource
-                 , entrypoint
-                 , "-v"
-                 , "--debug"
-                 ])
-                {cwd = Just noriaDir}
-            ""
+compileAlgo algoFile entrypoint =
+    unless (genOnly ?genericOpts) $ do
+        algoSource <- makeAbsolute algoFile
+        void $
+            readCreateProcess
+                (proc
+                     "ohuac"
+                     [ "build"
+                     , "-g"
+                     , "noria-udf"
+                     , algoSource
+                     , entrypoint
+                     , "-v"
+                     , "--debug"
+                     ])
+                    {cwd = Just noriaDir}
+                ""
 
-rustCommand :: (?genericOpts :: GenericOpts) => [String] -> [String] -> IO String
+rustCommand ::
+       (?genericOpts :: GenericOpts) => [String] -> [String] -> IO String
 rustCommand cargoArgs binArgs0 = do
     fenv <- buildEnv
     readCreateProcess
-        (proc "cargo" (cargoArgs <> buildArgs <> binArgs)) {env = fenv} ""
+        (proc "cargo" (cargoArgs <> buildArgs <> binArgs)) {env = fenv}
+        ""
   where
     binArgs =
         case binArgs0 of
@@ -319,87 +276,54 @@ rustCommand cargoArgs binArgs0 = do
         | otherwise = pure Nothing
 
 sumCompBench ::
-       (?genericOpts :: GenericOpts)
+       (?genericOpts :: GenericOpts, ?outputFile :: FilePath)
     => String
     -> String
-    -> [(Word, Word)]
-    -> [String]
-    -> FilePath
-    -> FilePath
-    -> FilePath
-    -> (Int, Int)
-    -> Word
-    -> Word
-    -> Word
+    -> SumComparison
     -> IO ()
-sumCompBench queryBaseName tabName numGenRange queries outputFile fname lfname valueLimit lookupRounds lookupsPerRound numSelectable = do
+sumCompBench queryBaseName tabName sc@SumComparison {..} = do
     compileAlgo "avg.ohuac" "avg"
-    withFile outputFile WriteMode $ \h -> do
+    withFile ?outputFile WriteMode $ \h -> do
         hPutStrLn h "Phase,Lang,Items,Time"
         for_ numGenRange $ \n@(lo, hi) -> do
             let items = (lo + hi) `div` 2
             gen n
-            handlerFunc <-
-                if isVerify
-                    then do
-                        expected <-
-                            do dat <- readFile fname
-                               pure $
-                                   mapMaybe
-                                       (\case
-                                            (splitOn ',' -> [(read -> k), (read -> v)]) ->
-                                                Just (k, [v :: Int])
-                                            other ->
-                                                trace
-                                                    ("Unparseable data: " <>
-                                                     other)
-                                                    Nothing)
-                                       (drop 2 $ lines dat) &
-                                   IM.fromListWith (<>) &
-                                   fmap
-                                       (\v ->
-                                            fromIntegral (sum v) /
-                                            fromIntegral (length v))
-                        pure $
-                            const $ \case
-                                (splitOn ',' -> [(read -> key), (read -> val)]) ->
-                                    let precalc = expected IM.! key :: Double
-                                     in printf
-                                            "%v,%f,%f\n"
-                                            (show $ precalc == val)
-                                            precalc
-                                            val
-                                other -> putStrLn $ "Unparseable: " <> other
-                    else pure $ \query (splitOn ',' -> [phase, _, time]) ->
-                             hPrintf
-                                 h
-                                 "%s,%s,%i,%i\n"
-                                 phase
-                                 query
-                                 items
-                                 (read time :: Word)
+            handlerFunc <- mkHandlerFunc items
             for_ queries $ \query ->
                 replicateM_ (fromIntegral repeat) $
                 let queryFile = printf "%s/%s.sql" queryBaseName query
                  in rustCommand
-                        [ "run"
-                        , "--bin"
-                        , "features"]
-                        [ queryFile
-                        , fname
-                        , lfname
-                        ] >>=
-                    mapM_ (handlerFunc query) . lines
+                        ["run", "--bin", "features"]
+                        [queryFile, dataFile, lookupFile] >>=
+                    mapM_ (handlerFunc h query) . lines
   where
-    gen =
-        sumCompGen
-            tabName
-            fname
-            lfname
-            valueLimit
-            lookupRounds
-            lookupsPerRound
-            numSelectable
+    mkHandlerFunc items
+        | isVerify = do
+            dat <- readFile dataFile
+            let expected =
+                    mapMaybe
+                        (\case
+                             (splitOn ',' -> [(read -> k), (read -> v)]) ->
+                                 Just (k, [v :: Int])
+                             other ->
+                                 trace ("Unparseable data: " <> other) Nothing)
+                        (drop 2 $ lines dat) &
+                    IM.fromListWith (<>) &
+                    fmap (\v -> fromIntegral (sum v) / fromIntegral (length v))
+            pure $ \_ _ ->
+                \case
+                    (splitOn ',' -> [read -> key, read -> val]) ->
+                        let precalc = expected IM.! key :: Double
+                         in printf
+                                "%v,%f,%f\n"
+                                (show $ precalc == val)
+                                precalc
+                                val
+                    other -> putStrLn $ "Unparseable: " <> other
+        | otherwise =
+            pure $ \h query (splitOn ',' -> [phase, _, time]) ->
+                hPrintf h "%s,%s,%i,%i\n" phase query items (read time :: Word)
+    gen = sumCompGen tabName sc
     GenericOpts {..} = ?genericOpts
 
 noriaDir :: (?genericOpts :: GenericOpts) => FilePath
@@ -456,4 +380,5 @@ main =
         let ?genericOpts = genericOpts
         cfg <- read <$> readFile config
         --for_ (zip [(0 ::Int)..] cfgs) $ \(i, cfg) ->
-        runBenches (config -<.> "csv") cfg
+        let ?outputFile = config -<.> "csv"
+         in runBenches cfg

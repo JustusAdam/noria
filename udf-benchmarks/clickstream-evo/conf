@@ -1,3 +1,4 @@
+ClickstreamEvo'
 ClickstreamEvo
     { numUsers = 1000
     , eventRange = [(100,150),(200,300),(400,600)]

@@ -1,4 +1,5 @@
 SumCount
+SumCount'
     { numSelectable = 100
     , numGenRange = [(40,40)]
     , valueLimit = (-50, 50)

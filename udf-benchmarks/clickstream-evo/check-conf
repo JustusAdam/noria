@@ -1,4 +1,4 @@
-ClickstreamEvo
+ClickstreamEvo' ClickstreamEvo
     { numUsers = 10
     , eventRange = [(100,150)]
     , boundaryProb = 0.1
