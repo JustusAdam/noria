@@ -5,6 +5,6 @@ CREATE TABLE clicks
 );
 
 VIEW clickstream_ana:
-    SELECT click_ana(user_id,pagetype,ts)
+    SELECT user_id, click_ana(user_id,pagetype,ts)
     FROM clicks
     WHERE user_id = ?;
