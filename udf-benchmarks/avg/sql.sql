@@ -11,6 +11,6 @@ CountQ:
     GROUP BY aid;
 
 QUERY SumCount:
-    SELECT SumQ.aid, SumQ.computed + CountQ.computed
+    SELECT SumQ.aid, SumQ.computed / CountQ.computed
     FROM CountQ JOIN SumQ ON CountQ.aid = SumQ.aid
     WHERE SumQ.aid = ?;
