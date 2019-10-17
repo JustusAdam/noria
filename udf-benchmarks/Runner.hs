@@ -244,14 +244,14 @@ compileAlgo algoFile entrypoint =
             readCreateProcess
                 (proc
                      "ohuac"
-                     [ "build"
+                     $ [ "build"
                      , "-g"
                      , "noria-udf"
                      , algoSource
                      , entrypoint
                      , "-v"
                      , "--debug"
-                     ])
+                     ] <> ["--force" | recompile ?genericOpts ])
                     {cwd = Just noriaDir}
                 ""
 
@@ -351,6 +351,7 @@ data GenericOpts = GenericOpts
     , repeat :: Word
     , noriaDirectory :: Maybe FilePath
     , isVerify :: Bool
+    , recompile :: Bool
     }
 
 acParser :: ParserInfo Opts
@@ -372,7 +373,8 @@ acParser = info (helper <*> p) fullDesc
         optional
             (strOption $
              long "noria-dir" <> help "Explicitly point to the noria dir") <*>
-        switch (long "verify" <> help "Verify output instead of measuring")
+        switch (long "verify" <> help "Verify output instead of measuring") <*>
+        switch (long "force" <> help "Force recompilation")
 
 main :: IO ()
 main =
