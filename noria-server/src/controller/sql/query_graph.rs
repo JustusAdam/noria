@@ -367,28 +367,35 @@ fn classify_conditionals(
                         ConditionBase::Field(ref rf) => {
                             // column/column comparison
                             if let ConditionBase::Field(ref lf) = *l {
-                                if lf.table.is_some()
-                                    && tables
-                                        .contains(&Table::from(lf.table.as_ref().unwrap().as_str()))
-                                    && rf.table.is_some()
-                                    && tables
-                                        .contains(&Table::from(rf.table.as_ref().unwrap().as_str()))
-                                {
-                                    // both columns' tables appear in table list --> comma join
-                                    if ct.operator == Operator::Equal || ct.operator == Operator::In
-                                    {
-                                        // equi-join between two tables
-                                        let mut join_ct = ct.clone();
-                                        if let Ordering::Less =
-                                            rf.table.as_ref().cmp(&lf.table.as_ref())
-                                        {
-                                            use std::mem;
-                                            mem::swap(&mut join_ct.left, &mut join_ct.right);
-                                        }
-                                        join.push(join_ct);
+                                let has_existing_table = |field: &Column| {
+                                    field
+                                        .table
+                                        .as_ref()
+                                        .map(|m| tables.contains(&Table::from(m.as_str())))
+                                        .unwrap_or(false)
+                                };
+                                if has_existing_table(lf) && has_existing_table(rf) {
+                                    if lf.table == rf.table {
+                                        // A filter condition on multiple fields of the same row
+                                        global.push(ce.clone());
                                     } else {
-                                        // non-equi-join?
-                                        unimplemented!("{:?}", ct);
+                                        // both columns' tables appear in table list --> comma join
+                                        if ct.operator == Operator::Equal
+                                            || ct.operator == Operator::In
+                                        {
+                                            // equi-join between two tables
+                                            let mut join_ct = ct.clone();
+                                            if let Ordering::Less =
+                                                rf.table.as_ref().cmp(&lf.table.as_ref())
+                                            {
+                                                use std::mem;
+                                                mem::swap(&mut join_ct.left, &mut join_ct.right);
+                                            }
+                                            join.push(join_ct);
+                                        } else {
+                                            // non-equi-join?
+                                            unimplemented!("{:?}", ct);
+                                        }
                                     }
                                 } else {
                                     // not a comma join, just an ordinary comparison with a

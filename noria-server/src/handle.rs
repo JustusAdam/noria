@@ -294,87 +294,96 @@ mod tests {
     #[test]
     fn simple_ohua_composition_test() {
         let mut b = make_test_instance(false);
-        b.install_recipe(
-            "CREATE TABLE tab (x int, y int);"
-        ).unwrap();
+        b.install_recipe("CREATE TABLE tab (x int, y int);")
+            .unwrap();
 
-        b.extend_recipe(
-            "VIEW test: SELECT composition(x, y) FROM tab WHERE x = ?;"
-        ).unwrap();
+        b.extend_recipe("VIEW test: SELECT composition(x, y) FROM tab WHERE x = ?;")
+            .unwrap();
 
         {
-            use noria::{ TableOperation, DataType };
+            use noria::{DataType, TableOperation};
             fn row(x: i32, y: i32) -> Vec<DataType> {
                 vec![x.into(), y.into()]
             }
-            let mut data = vec![
-                row(1,1),
-                row(1,2),
-                row(1,3),
-                row(1,4),
-            ];
+            let mut data = vec![row(1, 1), row(1, 2), row(1, 3), row(1, 4)];
             let ops = data.into_iter().map(TableOperation::Insert);
 
             b.table("tab").unwrap().perform_all(ops).wait().unwrap();
         }
 
-        println!("{:?}", b.view("test").unwrap().lookup(&[1.into()], true).wait().unwrap().1);
+        println!(
+            "{:?}",
+            b.view("test")
+                .unwrap()
+                .lookup(&[1.into()], true)
+                .wait()
+                .unwrap()
+                .1
+        );
     }
 
     #[test]
     fn show_me_the_graph() {
         let mut b = make_test_instance(false);
 
-        b.install_recipe(
-            "CREATE TABLE tab (x int, y int, PRIMARY KEY(x));"
-        ).unwrap();
+        b.install_recipe("CREATE TABLE tab (x int, y int, PRIMARY KEY(x));")
+            .unwrap();
 
-        b.extend_recipe(
-            "VIEW test: SELECT count(*), sum(y) FROM tab WHERE x = ? GROUP BY x ;"
-        ).unwrap();
+        b.extend_recipe("VIEW test: SELECT count(*), sum(y) FROM tab WHERE x = ? GROUP BY x ;")
+            .unwrap();
 
-        b.table("tab").unwrap().insert(vec![1.into(), 2.into()]).wait().unwrap();
+        b.table("tab")
+            .unwrap()
+            .insert(vec![1.into(), 2.into()])
+            .wait()
+            .unwrap();
 
-        println!("{:?}", b.view("test").unwrap().lookup(&[1.into()], true).wait().unwrap().1);
+        println!(
+            "{:?}",
+            b.view("test")
+                .unwrap()
+                .lookup(&[1.into()], true)
+                .wait()
+                .unwrap()
+                .1
+        );
     }
 
     #[test]
     fn simple_click_ana_test() {
         // TODO do this test with a timestamp instead
         let mut b = make_test_instance(false);
-        b.install_recipe(
-            "CREATE TABLE tab (grp int, category int, ts int);"
-        ).unwrap();
+        b.install_recipe("CREATE TABLE tab (grp int, category int, ts int);")
+            .unwrap();
 
         b.extend_recipe(
             "VIEW test: SELECT grp, click_ana(category, ts)
                         FROM tab
                         WHERE grp = ?
-                        GROUP BY grp;"
-        ).unwrap();
+                        GROUP BY grp;",
+        )
+        .unwrap();
 
         {
             //use chrono::{NaiveDateTime};
-            use noria::{ TableOperation, DataType };
+            use noria::{DataType, TableOperation};
             fn row(grp: i32, cat: i32, ts: i32) -> Vec<DataType> {
                 vec![grp.into(), cat.into(), ts.into()]
             }
             let mut data = vec![
-                row(1,1,1),
-                row(1,3,2),
-                row(1,3,5),
-                row(1,0,6),
-                row(1,2,10),
-
-                row(1,3,12),
-
-                row(1,1,14),
-                row(1,8,15),
-                row(1,3,16),
-                row(1,7,17),
-                row(1,77,18),
-                row(1,7,22),
-                row(1,2,25),
+                row(1, 1, 1),
+                row(1, 3, 2),
+                row(1, 3, 5),
+                row(1, 0, 6),
+                row(1, 2, 10),
+                row(1, 3, 12),
+                row(1, 1, 14),
+                row(1, 8, 15),
+                row(1, 3, 16),
+                row(1, 7, 17),
+                row(1, 77, 18),
+                row(1, 7, 22),
+                row(1, 2, 25),
             ];
             use rand::Rng;
             rand::thread_rng().shuffle(&mut data);
@@ -383,7 +392,13 @@ mod tests {
             b.table("tab").unwrap().perform_all(ops).wait().unwrap();
         }
 
-        let res = b.view("test").unwrap().lookup(&[1.into()], true).wait().unwrap().1;
+        let res = b
+            .view("test")
+            .unwrap()
+            .lookup(&[1.into()], true)
+            .wait()
+            .unwrap()
+            .1;
 
         println!("{:?}", res);
 
@@ -436,7 +451,15 @@ mod tests {
 
         b.table("a").unwrap().delete(vec![2.into()]).wait().unwrap();
 
-        assert!(b.view("test").unwrap().lookup(&[1.into()], true).wait().unwrap().1[0][1] == 6.into());
+        assert!(
+            b.view("test")
+                .unwrap()
+                .lookup(&[1.into()], true)
+                .wait()
+                .unwrap()
+                .1[0][1]
+                == 6.into()
+        );
     }
 
     #[test]
@@ -471,21 +494,50 @@ mod tests {
             "VIEW test: SELECT a.x, sum(a.y)
                         FROM a
                         WHERE a.x = ?
-                        GROUP By x;")
-            .unwrap();
+                        GROUP By x;",
+        )
+        .unwrap();
 
         let v = b.view("test").unwrap();
 
         // Here the code has already failed.
 
-        let qr =
-            v.lookup(&[1.into()], true).wait().unwrap().1;
+        let qr = v.lookup(&[1.into()], true).wait().unwrap().1;
 
         assert!(qr[0][1] == 24.0.into());
 
         b.table("a").unwrap().delete(vec![2.into()]).wait().unwrap();
 
-        assert!(b.view("test").unwrap().lookup(&[3.into()],true).wait().unwrap().1[0][1] == 6.0.into());
+        assert!(
+            b.view("test")
+                .unwrap()
+                .lookup(&[3.into()], true)
+                .wait()
+                .unwrap()
+                .1[0][1]
+                == 6.0.into()
+        );
+    }
 
+    #[test]
+    fn clickstream_test() {
+        let mut b = make_test_instance(true);
+        b.install_recipe(include_str!("../../clickstream.sql"))
+            .unwrap();
+        {
+            let mut t = b.table("clicks").unwrap().into_sync();
+
+            t.insert(vec![1.into(), 0.into(), 1.into()]).unwrap();
+            t.insert(vec![1.into(), 2.into(), 2.into()]).unwrap();
+            t.insert(vec![1.into(), 1.into(), 3.into()]).unwrap();
+        };
+        println!(
+            "{:?}",
+            b.view("clickstream_ana")
+                .unwrap()
+                .into_sync()
+                .lookup(&[1.into()], true)
+                .unwrap()
+        );
     }
 }
