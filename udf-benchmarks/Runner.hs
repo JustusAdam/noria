@@ -2,7 +2,8 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, GADTs, LambdaCase,
   TypeApplications, NamedFieldPuns, RecordWildCards,
   ScopedTypeVariables, AllowAmbiguousTypes, ImplicitParams,
-  MultiWayIf, ViewPatterns, TupleSections, DuplicateRecordFields #-}
+  MultiWayIf, ViewPatterns, TupleSections, DuplicateRecordFields,
+  DeriveGeneric #-}
 
 import Control.Category ((>>>))
 import Control.Monad
@@ -16,7 +17,10 @@ import qualified Data.HashTable.Class as HT hiding (new)
 import qualified Data.HashTable.ST.Linear as HT (new)
 import qualified Data.IntMap as IM
 import Data.Maybe (fromMaybe, mapMaybe)
+import qualified Data.Text as T
+import qualified Data.Text.IO as T
 import Data.Traversable (for)
+import GHC.Generics (Generic)
 import Options.Applicative
 import System.Directory
 import System.Environment
@@ -27,6 +31,8 @@ import System.IO.Unsafe (unsafePerformIO)
 import System.Process
 import System.Random
 import Text.Printf (hPrintf, printf)
+import GHC.Conc (getNumProcessors)
+import qualified Toml
 
 import Debug.Trace
 
@@ -36,6 +42,7 @@ data Bench
     = SumComparison' SumComparison
     | SumCount' SumComparison
     | ClickstreamEvo' ClickstreamEvo
+    | ClickstreamSharding' ClickstreamSharding
     deriving (Read)
 
 data SumComparison = SumComparison
@@ -54,6 +61,24 @@ data ClickstreamEvo = ClickstreamEvo
     , numLookups :: Word
     , queries :: [String]
     } deriving (Read)
+
+data ParallelismRange = ParallelismRange
+    { partitionsLow :: Word
+    , partitionsHigh :: Maybe Word
+    } deriving Read
+
+data ClickstreamSharding = ClickstreamSharding
+    { csBasic :: ClickstreamEvo
+    , sharding :: ParallelismRange
+    } deriving (Read)
+
+data EConf = EConf
+    { query_file :: T.Text
+    , data_file :: T.Text
+    , lookup_file :: T.Text
+    , sharding :: Maybe Word
+    , logging :: Maybe Bool
+    } deriving (Generic)
 
 assertM :: Applicative m => Bool -> m ()
 assertM = flip assert (pure ())
@@ -78,40 +103,117 @@ lookupFile :: (?outputFile :: FilePath) => FilePath
 lookupFile = ?outputFile -<.> "lookups.csv"
 
 runBenches ::
-       (?genericOpts :: GenericOpts, ?outputFile :: FilePath)
-    => Bench
-    -> IO ()
+       (?genericOpts :: GenericOpts, ?outputFile :: FilePath) => Bench -> IO ()
 runBenches =
     \case
         SumCount' a -> sumCompBench "avg" "SumCount" a
         SumComparison' a -> sumCompBench "sum-comp" "TabSum" a
         ClickstreamEvo' a -> clickStreamEvoBench a
+        ClickstreamSharding' a -> clickStreamShardingBench a
+
+runBenchBin ::
+       (?genericOpts :: GenericOpts, ?outputFile :: String)
+    => EConf
+    -> IO String
+runBenchBin cfg = do
+    T.writeFile confPath (Toml.encode Toml.genericCodec cfg)
+    rustCommand ["run", "--bin", "features"] [confPath]
+  where
+    confPath = dropExtension ?outputFile ++ "-econf.toml"
+
+basicEConf :: (?outputFile :: String) => String -> EConf
+basicEConf qfile =
+    EConf
+        { query_file = T.pack qfile
+        , data_file = T.pack dataFile
+        , lookup_file = T.pack lookupFile
+        , sharding = Nothing
+        , logging = Nothing
+        }
 
 clickStreamEvoBench ::
        (?genericOpts :: GenericOpts, ?outputFile :: FilePath)
     => ClickstreamEvo
     -> IO ()
-clickStreamEvoBench eg@ClickstreamEvo {..} = do
-    compileAlgo "click_ana.ohuac" "click_ana"
+clickStreamEvoBench evo =
     withFile ?outputFile WriteMode $ \h -> do
         hPutStrLn h "Version,Phase,Events,Time"
-        for_ eventRange $ \evr -> do
-            clickstreamEvoGen eg evr
-            when genOnly exitSuccess
-            handlerFunc <- mkHandlerFunc evr
-            replicateM_ (fromIntegral repeat) $
-                for_ queries $ \query -> do
-                    let queryFile = printf "clickstream-evo/%s.sql" query
-                    rustCommand
-                        ["run", "--bin", "features"]
-                        [queryFile, dataFile, lookupFile] >>=
-                        mapM_ (handlerFunc query h) . lines
+        configurableClickStreamBench
+            (pure . basicEConf)
+            (\ _ query phase (lo, hi) time ->
+                 hPrintf
+                     h
+                     "%s,%s,%i,%i\n"
+                     query
+                     phase
+                     ((hi + lo) `div` 2)
+                     (time :: Word))
+            evo
+
+parallelismRangeToBounds :: ParallelismRange -> IO (Word, Word)
+parallelismRangeToBounds r =
+    verify <$>
+    case partitionsHigh r of
+        Nothing -> (partitionsLow r, ) . fromIntegral <$> getNumProcessors
+        Just set -> pure (partitionsLow r, set)
+  where
+    verify t@(a, b)
+        | a > b = error "Range ordering!"
+        | otherwise = t
+
+clickStreamShardingBench ::
+       (?genericOpts :: GenericOpts, ?outputFile :: FilePath)
+    => ClickstreamSharding
+    -> IO ()
+clickStreamShardingBench sconf =
+    withFile ?outputFile WriteMode $ \h -> do
+        hPutStrLn h "Version,Shards,Phase,Events,Time"
+        (plow, phigh) <-
+            parallelismRangeToBounds (sharding (sconf :: ClickstreamSharding))
+        configurableClickStreamBench
+            (\q ->
+                  [(basicEConf q)
+                      { sharding =
+                            if shardNum == 0
+                                then Nothing
+                                else Just shardNum
+                      }
+                  | shardNum <- [plow..phigh]])
+            (\cfg query phase (lo, hi) time ->
+                  hPrintf
+                      h
+                      "%s,%i,%s,%i,%i\n"
+                      query
+                      (fromMaybe 0 $ sharding (cfg :: EConf))
+                      phase
+                      ((hi + lo) `div` 2)
+                      (time :: Word))
+            (csBasic sconf)
+
+configurableClickStreamBench ::
+       (?genericOpts :: GenericOpts, ?outputFile :: FilePath)
+    => (String -> [ EConf ])
+    ->  (EConf -> String -> String -> (Word, Word) -> Word -> IO ())
+    -> ClickstreamEvo
+    -> IO ()
+configurableClickStreamBench mkConfs writeResults eg@ClickstreamEvo {..} = do
+    compileAlgo "click_ana.ohuac" "click_ana"
+    for_ eventRange $ \evr -> do
+        clickstreamEvoGen eg evr
+        when genOnly exitSuccess
+        handlerFunc <- mkHandlerFunc evr
+        replicateM_ (fromIntegral repeat) $
+            for_ queries $ \query -> do
+                let queryFile = printf "clickstream-evo/%s.sql" query
+                for_ (mkConfs queryFile) $ \cfg ->
+                    runBenchBin cfg >>= mapM_ (handlerFunc cfg query) . lines
   where
     GenericOpts {..} = ?genericOpts
     imperativeClickStream dat = do
         tab <- HT.new
-        forM_ dat $ \(uid, cat, _ts) ->
+        forM_ dat $ \(uid, cat, _ts)
             -- Not using `ts` because in the data generates timestamps in order
+         ->
             HT.mutate
                 tab
                 uid
@@ -131,7 +233,7 @@ clickStreamEvoBench eg@ClickstreamEvo {..} = do
                          then 0.0
                          else fromIntegral (sum st) / fromIntegral (length st))
                 l
-    mkHandlerFunc (lo,hi)
+    mkHandlerFunc evr
         | isVerify = do
             f <- readFile dataFile
             let dat =
@@ -146,8 +248,8 @@ clickStreamEvoBench eg@ClickstreamEvo {..} = do
                                  trace ("Unparseable data: " <> other) Nothing) $
                     drop 2 $ lines f
             let expected = runST (imperativeClickStream dat)
-            pure $
-                \_ _ -> \case
+            pure $ \_ _ ->
+                \case
                     (splitOn ',' -> [read -> key, read -> val]) ->
                         let precalc = expected IM.! key :: Double
                          in printf
@@ -158,14 +260,8 @@ clickStreamEvoBench eg@ClickstreamEvo {..} = do
                                 val
                     other -> putStrLn $ "Unparseable: " <> other
         | otherwise =
-            pure $ \query h (splitOn ',' -> [phase, _, time]) ->
-                hPrintf
-                    h
-                    "%s,%s,%i,%i\n"
-                    query
-                    phase
-                    ((hi + lo) `div` 2)
-                    (read time :: Word)
+            pure $ \cfg query (splitOn ',' -> [phase, _, time]) ->
+                writeResults cfg query phase evr (read time)
 
 weightedRandom ::
        forall a m. MonadIO m
@@ -242,16 +338,16 @@ compileAlgo algoFile entrypoint =
         algoSource <- makeAbsolute algoFile
         void $
             readCreateProcess
-                (proc
-                     "ohuac"
-                     $ [ "build"
-                     , "-g"
-                     , "noria-udf"
-                     , algoSource
-                     , entrypoint
-                     , "-v"
-                     , "--debug"
-                     ] <> ["--force" | recompile ?genericOpts ])
+                (proc "ohuac" $
+                 [ "build"
+                 , "-g"
+                 , "noria-udf"
+                 , algoSource
+                 , entrypoint
+                 , "-v"
+                 , "--debug"
+                 ] <>
+                 ["--force" | recompile ?genericOpts])
                     {cwd = Just noriaDir}
                 ""
 
@@ -292,9 +388,7 @@ sumCompBench queryBaseName tabName sc@SumComparison {..} = do
             for_ queries $ \query ->
                 replicateM_ (fromIntegral repeat) $
                 let queryFile = printf "%s/%s.sql" queryBaseName query
-                 in rustCommand
-                        ["run", "--bin", "features"]
-                        [queryFile, dataFile, lookupFile] >>=
+                 in runBenchBin (basicEConf queryFile) >>=
                     mapM_ (handlerFunc h query) . lines
   where
     mkHandlerFunc items

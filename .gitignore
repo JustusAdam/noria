@@ -41,3 +41,6 @@ plots_files/
 /noria-server/dataflow/src/ops/ohua/generated/
 /noria-server/dataflow/src/state/ohua/generated/
 /noria-server/mir/src/udfs/
+*.o
+*.hi
+/udf-benchmarks/Runner

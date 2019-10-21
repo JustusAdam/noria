@@ -1,38 +1,54 @@
-#![feature(test)]
-
 extern crate noria;
-extern crate test;
+extern crate serde_derive;
+extern crate toml;
+
+use std::io::Read;
+
+use serde_derive::Deserialize;
 
 use noria::{Builder, DataType, TableOperation};
 
-fn make_test_builder(log: bool) -> Builder {
+#[derive(Deserialize)]
+struct EConf {
+    query_file: String,
+    data_file: String,
+    lookup_file: String,
+    sharding: Option<usize>,
+    logging: Option<bool>,
+}
+
+fn make_test_builder(conf: &EConf) -> Builder {
     let mut b = Builder::default();
-    b.set_sharding(None);
-    if log {
+    b.set_sharding(conf.sharding);
+    if conf.logging == Some(true) {
         b.log_with(noria::logger_pls());
     }
     b
 }
 
-fn make_test_instance(log: bool) -> noria::SyncHandle<noria::consensus::LocalAuthority> {
-    make_test_builder(log).start_simple().unwrap()
+fn make_test_instance(conf: &EConf) -> noria::SyncHandle<noria::consensus::LocalAuthority> {
+    make_test_builder(conf).start_simple().unwrap()
 }
 
 fn read_file(path: &str) -> std::io::Result<String> {
     use std::fs::File;
-    use std::io::{BufReader, Read};
+    use std::io::{BufReader};
     let mut s = String::new();
     BufReader::new(File::open(path)?).read_to_string(&mut s)?;
     Ok(s)
 }
 
-fn get_inputs() -> std::io::Result<(String, String, String)> {
+fn get_inputs() -> std::io::Result<(EConf,String, String, String)> {
     let mut args = std::env::args();
     args.next().unwrap();
-    let exp_query = read_file(&args.next().unwrap())?;
-    let exp_data = read_file(&args.next().unwrap())?;
-    let exp_lookups = read_file(&args.next().unwrap())?;
-    Ok((exp_query, exp_data, exp_lookups))
+    let conf_file = args.next().unwrap();
+    let mut buf = String::new();
+    std::fs::File::open(conf_file)?.read_to_string(&mut buf).unwrap();
+    let conf :EConf = toml::from_str(&mut buf).unwrap();
+    let exp_query = read_file(&conf.query_file)?;
+    let exp_data = read_file(&conf.data_file)?;
+    let exp_lookups = read_file(&conf.lookup_file)?;
+    Ok((conf, exp_query, exp_data, exp_lookups))
 }
 
 fn make_deser<T: std::str::FromStr + Into<DataType>>() -> Box<dyn Fn(&str) -> DataType>
@@ -71,8 +87,8 @@ fn deser_lines(lines: &mut std::str::Lines) -> (Vec<Vec<DataType>>, Option<Strin
 
 type TaggedRows = (String, Vec<Vec<DataType>>);
 
-fn get_data() -> (String, Vec<TaggedRows>, TaggedRows) {
-    let (exp_query, exp_data, exp_lookups) = get_inputs().unwrap();
+fn get_data() -> (EConf, String, Vec<TaggedRows>, TaggedRows) {
+    let (conf, exp_query, exp_data, exp_lookups) = get_inputs().unwrap();
     let mut processed_data = Vec::new();
 
     let mut lines = exp_data.lines();
@@ -93,7 +109,7 @@ fn get_data() -> (String, Vec<TaggedRows>, TaggedRows) {
 
     let (processed_lookups, _) = deser_lines(&mut lookup_lines);
 
-    (exp_query, processed_data, (lookup_label, processed_lookups))
+    (conf, exp_query, processed_data, (lookup_label, processed_lookups))
 }
 
 const SETUP_FOR_VERIFY_STR: Option<&'static str> = option_env!("VERIFY");
@@ -103,9 +119,9 @@ fn is_setup_for_verify() -> bool {
 }
 
 fn main() {
-    let (query, data, lookups) = get_data();
+    let (conf, query, data, lookups) = get_data();
     eprintln!("Finished parsing input data");
-    let mut builder = make_test_instance(false);
+    let mut builder = make_test_instance(&conf);
 
     builder.install_recipe(query).unwrap();
 

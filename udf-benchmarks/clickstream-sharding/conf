@@ -1,0 +1,13 @@
+ClickstreamSharding'
+    ClickstreamSharding
+        { csBasic =
+              ClickstreamEvo
+                  { numUsers = 10000
+                  , eventRange = [(1000, 1300)]
+                  , boundaryProb = 0.1
+                  , numLookups = 400
+                  , queries = ["full_ohua"]
+                  }
+        , sharding =
+              ParallelismRange {partitionsLow = 0, partitionsHigh = Just 8}
+        }
