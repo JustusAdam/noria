@@ -15,6 +15,9 @@ struct EConf {
     lookup_file: String,
     sharding: Option<usize>,
     logging: Option<bool>,
+    separate_ops: Option<Vec<String>>,
+    dump_graph: Option<String>,
+    separate_ops_exclusive: Option<bool>,
 }
 
 fn make_test_builder(conf: &EConf) -> Builder {
@@ -120,15 +123,32 @@ fn is_setup_for_verify() -> bool {
 
 fn main() {
     let (conf, query, data, lookups) = get_data();
+    if let Some(ref l) = conf.separate_ops {
+        eprintln!("Setting domain control for process {}", std::process::id());
+        unsafe {
+            noria::make_single_list = Some(l.clone());
+        }
+    }
+    if let Some(b) = conf.separate_ops_exclusive {
+        unsafe {
+            noria::make_singles_completely_exclusive = b;
+        }
+    }
     eprintln!("Finished parsing input data");
-    let mut builder = make_test_instance(&conf);
+    let mut controller = make_test_instance(&conf);
 
-    builder.install_recipe(query).unwrap();
+    controller.install_recipe(query).unwrap();
+
+    if let Some(file) = conf.dump_graph {
+        use std::io::Write;
+        let gr = controller.graphviz();
+        write!(std::fs::File::create(file).unwrap(), "{}", gr.unwrap()).unwrap();
+    }
 
     use std::time::Instant;
 
     for (table_name, data) in data {
-        let mut table = builder.table(&table_name).unwrap().into_sync();
+        let mut table = controller.table(&table_name).unwrap().into_sync();
         let t0 = Instant::now();
         table
             .perform_all(data.into_iter().map(TableOperation::Insert))
@@ -143,7 +163,7 @@ fn main() {
 
     let (view_name, mut lookup_data) = lookups;
 
-    let mut query = builder.view(&view_name).unwrap().into_sync();
+    let mut query = controller.view(&view_name).unwrap().into_sync();
     let t0 = Instant::now();
 
     for i in lookup_data.drain(..) {

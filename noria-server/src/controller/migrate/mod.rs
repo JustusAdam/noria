@@ -35,6 +35,8 @@ crate mod materialization;
 mod routing;
 mod sharding;
 
+pub use assignment::{make_singles_completely_exclusive, make_single_list };
+
 #[derive(Clone)]
 pub(super) enum ColumnChange {
     Add(String, DataType),

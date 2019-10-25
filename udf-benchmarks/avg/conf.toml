@@ -1,0 +1,29 @@
+
+numSelectable = 6000
+lookupRounds = 10
+lookupsPerRound = 20
+queries = ["sql", "ohua"]
+
+[valueLimit]
+low = -50
+high = 50
+
+[[numGenRange]]
+low = 0
+high = 60
+
+[[numGenRange]]
+low = 50
+high = 100
+
+[[numGenRange]]
+low = 100
+high = 150
+
+[[numGenRange]]
+low = 150
+high = 200
+
+[[numGenRange]]
+low = 200
+high = 250

@@ -1,0 +1,42 @@
+# [[separations]]
+# ops = []
+# dump_graph = "unseparated.dot"
+
+# [[separations]]
+# ops = ["ohua.generated/op_s_acc_1_0"]
+# dump_graph = "part-connected.dot"
+
+[[separations]]
+ops = ["ohua.generated/op_s_acc_1_0", "ohua.generated/op_s_acc_0_0"]
+exclusive = true
+dump_graph = "completely-separate.dot"
+
+[basic]
+numSelectable = 6000
+lookupRounds = 10
+lookupsPerRound = 20
+queries = ["ohua"]
+
+[basic.valueLimit]
+low = -50
+high = 50
+
+# [[numGenRange]]
+# low = 0
+# high = 60
+
+# [[numGenRange]]
+# low = 50
+# high = 100
+
+# [[numGenRange]]
+# low = 100
+# high = 150
+
+# [[numGenRange]]
+# low = 150
+# high = 200
+
+[[basic.numGenRange]]
+low = 200
+high = 250

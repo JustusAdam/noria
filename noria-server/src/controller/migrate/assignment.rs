@@ -4,6 +4,22 @@ use dataflow::prelude::*;
 use petgraph;
 use slog::Logger;
 
+/// Don't touch this. For experiment use only!
+pub static mut make_single_list: Option<Vec<String>> = None;
+
+/// Don;t touch this. For experiment use only!
+pub static mut make_singles_completely_exclusive: bool = true;
+
+fn must_be_separate(n: &Node) -> bool {
+    unsafe {
+        if let Some(ref l) = make_single_list {
+            l.iter().any(|s| s == n.name())
+        } else {
+            false
+        }
+    }
+}
+
 pub fn assign(log: &Logger, graph: &mut Graph, topo_list: &[NodeIndex], ndomains: &mut usize) {
     // we need to walk the data flow graph and assign domains to all new nodes.
     // we generally want as few domains as possible, but in *some* cases we must make new ones.
@@ -17,11 +33,16 @@ pub fn assign(log: &Logger, graph: &mut Graph, topo_list: &[NodeIndex], ndomains
         *ndomains - 1
     };
 
+
     for &node in topo_list {
         #[allow(clippy::cognitive_complexity)]
         let assignment = (|| {
             let graph = &*graph;
             let n = &graph[node];
+
+            if must_be_separate(n) {
+                return next_domain()
+            }
 
             if n.is_shard_merger() {
                 // shard mergers are always in their own domain.
@@ -117,6 +138,11 @@ pub fn assign(log: &Logger, graph: &mut Graph, topo_list: &[NodeIndex], ndomains
 
             let mut assignment = None;
             for &(_, ref p) in &parents {
+                unsafe {
+                    if make_singles_completely_exclusive && must_be_separate(p) {
+                        continue;
+                    }
+                }
                 if p.is_sharder() {
                     // we're a child of a sharder (which currently has to be unsharded). we
                     // can't be in the same domain as the sharder (because we're starting a new

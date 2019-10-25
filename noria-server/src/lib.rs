@@ -396,6 +396,8 @@ pub use dataflow::{DurabilityMode, PersistenceParameters};
 pub use noria::consensus::LocalAuthority;
 pub use noria::*;
 pub use petgraph::graph::NodeIndex;
+pub use controller::migrate::make_single_list;
+pub use controller::migrate::make_singles_completely_exclusive;
 
 #[doc(hidden)]
 pub mod manual {

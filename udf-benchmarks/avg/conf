@@ -1,9 +1,0 @@
-SumCount'
-SumComparison
-    { numSelectable = 6000
-    , numGenRange = [(0, 60), (50,100), (100,150), (150,200),(200,250)]
-    , valueLimit = (-50, 50)
-    , lookupRounds = 10
-    , lookupsPerRound = 20
-    , queries = ["sql", "ohua"]
-    }

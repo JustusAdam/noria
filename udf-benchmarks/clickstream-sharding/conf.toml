@@ -1,0 +1,13 @@
+[sharding]
+low = 0
+high = 8
+
+[csBasic]
+numUsers = 10000
+boundaryProb = 0.1
+numLookups = 400
+queries = ["full_ohua"]
+
+[[csBasic.eventRange]]
+low = 1000
+high = 1300
