@@ -536,9 +536,6 @@ impl SqlIncorporator {
 
         use std::io::Write;
 
-        write!(File::create(format!("{}.dump.dot", query_name )).unwrap(), "{}", og_mir.to_graphviz().unwrap()).unwrap();
-
-
         trace!(
             self.log,
             "Unoptimized MIR:\n{}",

@@ -672,6 +672,8 @@ fn make_join_node(
 
     assert_eq!(on_left.len(), on_right.len());
 
+    //eprintln!("left: {:?}\nright: {:?}\nproj: {:?}\ncols: {:?}", on_left, on_right, proj_cols, columns);
+
     let column_names = column_names(columns);
 
     let (projected_cols_left, rest): (Vec<Column>, Vec<Column>) = proj_cols

@@ -1,0 +1,5 @@
+data_file = "avg-split-domain/conf.data.csv"
+dump_graph = "one-domain.dot"
+lookup_file = "avg-split-domain/conf.lookups.csv"
+query_file = "avg-split-domain/ohua.sql"
+separate_ops = []

@@ -1,0 +1,6 @@
+data_file = "avg-split-domain/conf.data.csv"
+dump_graph = "four-domains.dot"
+lookup_file = "avg-split-domain/conf.lookups.csv"
+query_file = "avg-split-domain/ohua.sql"
+separate_ops = ["ohua.generated/op_s_acc_0_0", "ohua.generated/op_s_acc_1_0"]
+separate_ops_exclusive = true

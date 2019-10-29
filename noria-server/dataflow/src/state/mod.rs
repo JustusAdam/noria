@@ -64,7 +64,14 @@ crate trait State: SizeOf + Send {
         Option::None
     }
 
-    // <insert(state-trait-method-def)>
+    // <begin(state-trait-method-def)>
+    fn as_op_s_acc_1_0_state<'a>(&'a mut self) -> Option<&'a mut SpecialStateWrapper<MemoElem<crate::state::ohua::count::Count>>> {
+    Option::None
+    }
+    fn as_op_s_acc_0_0_state<'a>(&'a mut self) -> Option<&'a mut SpecialStateWrapper<MemoElem<crate::state::ohua::sum::Sum>>> {
+    Option::None
+    }
+    // <end(state-trait-method-def)>
 }
 
 #[derive(Clone, Debug)]

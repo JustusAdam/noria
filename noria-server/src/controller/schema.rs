@@ -96,6 +96,11 @@ fn type_for_internal_column(
         }
         ops::NodeOperator::OldGroupingUDF(_) | ops::NodeOperator::OhuaTestOp(_) =>
             unimplemented!(),
+        // <begin(type-resolution-for-generated-nodes)>
+        ops::NodeOperator::Op_s_acc_1_0udf(ref n) => Some(n.typ()),
+        ops::NodeOperator::Op_s_acc_0_0udf(ref n) => Some(n.typ()),
+        ops::NodeOperator::Op_p_div_or_zero__0udf(ref n) => Some(n.typ()),
+        // <end(type-resolution-for-generated-nodes)>
         // no other operators should every generate columns
         _ => unreachable!(),
     }

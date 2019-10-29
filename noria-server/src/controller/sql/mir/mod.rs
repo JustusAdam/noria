@@ -205,7 +205,7 @@ impl SqlToMirConverter {
                 // NOTE(jon): the uwnrap here is almost certainly wrong given the business
                 // that goes on further down where it appens a column in magical circumstances.
                 // also, what if two columns share a name, but differ in .table?
-                let fi = columns.iter().rposition(|c| *c.name == f.name).unwrap();
+                let fi = columns.iter().rposition(|c| *c.name == f.name).ok_or_else(|| format!("Could not find {} in {:?}, parent cols: {:?}", f, columns, n.borrow().columns)).unwrap();
                 FilterCondition::Comparison(ct.operator.clone(), filter::Value::Column(fi))
             }
             _ => unimplemented!(),

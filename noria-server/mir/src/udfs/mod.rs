@@ -3,7 +3,7 @@ use crate::node::MirNodeType;
 use column::Column;
 
 // <begin(graph-mods)>
-mod composition_graph;
+mod avg_graph;
 // <end(graph-mods)>
 
 
@@ -32,7 +32,7 @@ pub enum ExecutionType {
 pub fn get_graph(gr: &String) -> Option<UDFGraph> {
     match gr.as_ref() {
         // <begin(graph-dispatch)>
-        "composition" => Some(composition_graph::mk_graph()),
+        "avg" => Some(avg_graph::mk_graph()),
         // <end(graph-dispatch)>
         _ => None
     }

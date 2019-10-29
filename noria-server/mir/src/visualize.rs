@@ -325,7 +325,11 @@ impl GraphViz for MirNodeType {
             MirNodeType::Rewrite { ref column, .. } => {
                 write!(out, "Rw | column: {}", column)?;
             }
-            MirNodeType::UDF { ref function_name, ref input, .. } => {
+            MirNodeType::UDF {
+                ref function_name,
+                ref input,
+                ..
+            } => {
                 write!(out, "udf:{}(", function_name)?;
                 for i in input.iter() {
                     write!(out, "{}", print_col(i))?;

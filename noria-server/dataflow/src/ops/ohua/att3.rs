@@ -269,6 +269,16 @@ pub fn new_grouped_function_from_string(
     group: Vec<usize>,
 ) -> NodeOperator {
     match name.as_ref() {
+        // <begin(generated-reducing-operator-inits)>
+        "ohua.generated/op_s_acc_1_0" => {
+            assert_eq!(over_cols.len(), 1);
+            super::generated::op_s_acc_1_0::Op_s_acc_1_0::new(parent, 0, group).into()
+        },
+        "ohua.generated/op_s_acc_0_0" => {
+            assert_eq!(over_cols.len(), 1);
+            super::generated::op_s_acc_0_0::Op_s_acc_0_0::new(parent, 0, over_cols[0], group).into()
+        },
+        // <end(generated-reducing-operator-inits)>
         "test_count" => GroupedOperator::new(
             parent,
             GroupedUDF {
@@ -296,7 +306,6 @@ pub fn new_grouped_function_from_string(
                 over_cols[1],
                 group,
         ).into()},
-        // <insert(generated-reducing-operator-inits)>
         _ => panic!("Unknown generated grouping operator: {}", name),
     }
 }
@@ -308,7 +317,16 @@ pub fn new_simple_function_from_string(
     carry: usize,
 ) -> NodeOperator {
     match name.as_ref() {
-        // <insert(generated-simple-operator-inits)>
+        // <begin(generated-simple-operator-inits)>
+        "ohua.generated/op_p_div_or_zero__0" => {
+            assert_eq!(over_cols.len(), 2);
+            super::generated::op_p_div_or_zero__0::Op_p_div_or_zero__0::new( parent
+            , 0
+            , over_cols[0]
+            , over_cols[1]
+            , carry ).into()
+        },
+        // <end(generated-simple-operator-inits)>
         " " => panic!("This is only for type inference"),
         _ => panic!("Unknown simple generated operator: {}", name)
     }
