@@ -1,5 +1,5 @@
 
-numSelectable = 6000
+numSelectable = 8000
 lookupRounds = 10
 lookupsPerRound = 20
 queries = ["sql", "ohua"]
