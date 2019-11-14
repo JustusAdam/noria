@@ -8,7 +8,7 @@ use slog::Logger;
 pub static mut make_single_list: Option<Vec<String>> = None;
 
 /// Don;t touch this. For experiment use only!
-pub static mut make_singles_completely_exclusive: bool = true;
+pub static mut make_singles_completely_exclusive: bool = false;
 
 fn must_be_separate(n: &Node) -> bool {
     unsafe {

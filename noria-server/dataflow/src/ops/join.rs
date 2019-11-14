@@ -172,6 +172,18 @@ impl Join {
                 if other_prepreprocessed {
                     reuse[i] = other[i].clone();
                 } else {
+                    assert!(reuse.len() > i, "Reuse is too short");
+                    let (side, side_idx) = if reusing_left {
+                        ("left", self.left)
+                    } else {
+                        ("right", self.right)
+                    };
+                    assert!(
+                        other.len() > c,
+                        "{} ({}) was short",
+                        side,
+                        side_idx
+                    );
                     reuse[i] = other[c].clone();
                 }
             }

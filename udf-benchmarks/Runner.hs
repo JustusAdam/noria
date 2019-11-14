@@ -1,4 +1,5 @@
-#!stack runhaskell
+#!/usr/bin/env stack
+-- stack --resolver=lts-14.6 script
 {-# LANGUAGE OverloadedStrings, TypeFamilies, GADTs, LambdaCase,
   TypeApplications, NamedFieldPuns, RecordWildCards,
   ScopedTypeVariables, AllowAmbiguousTypes, ImplicitParams,
@@ -98,6 +99,7 @@ data AvgSplitDomain = AvgSplitDomain
 
 data EConf = EConf
     { query_file :: T.Text
+    , table_file :: T.Text
     , data_file :: T.Text
     , lookup_file :: T.Text
     , sharding :: Maybe Word
@@ -194,6 +196,7 @@ basicEConf qfile =
         , separate_ops = Nothing
         , dump_graph = T.pack <$> dumpGraph ?genericOpts
         , separate_ops_exclusive = Nothing
+        , table_file = T.pack $ takeDirectory qfile </> "tables.sql"
         }
 
 clickStreamEvoBench ::
@@ -327,8 +330,9 @@ configurableClickStreamBench mkConfs writeResults eg@ClickstreamEvo {..} = do
                                 val
                     other -> putStrLn $ "Unparseable: " <> other
         | otherwise =
-            pure $ \cfg query (splitOn ',' -> [phase, _, time]) ->
-                writeResults cfg query phase evr (read time)
+            pure $ \cfg query -> \case
+                                     (splitOn ',' -> [phase, _, time]) -> writeResults cfg query phase evr (read time)
+                                     p -> printf "Weird line: %s" p
 
 weightedRandom ::
        forall a m. MonadIO m
@@ -563,17 +567,30 @@ acParser = info (helper <*> p) fullDesc
         switch (long "force" <> help "Force recompilation") <*>
         optional (strOption $ long "dump-graph" <> help "Dump the query in this file")
 
+allTargets =
+    [ "avg"
+    , "sum-comp"
+    , "clickstream-evo"
+    , "clickstream-sharding"
+    --, "avg-split-domain"
+    ]
+
 main :: IO ()
 main =
-    execParser acParser >>= \Opts {..} -> do
+    execParser acParser >>= \Opts {..} ->
         let ?genericOpts = genericOpts
-        let config =
-                fromMaybe
-                    (expName </>
-                     if isVerify genericOpts
-                         then "verify.toml"
-                         else "conf.toml")
-                    configPath
+         in let mkConfigPath =
+                    (</> if isVerify genericOpts
+                             then "verify.toml"
+                             else "conf.toml")
+                go0 n = go (mkConfigPath n) n
+             in case configPath of
+                    Just p -> go p expName
+                    Nothing
+                        | expName == "all" -> mapM_ go0 allTargets
+                        | otherwise -> go0 expName
+  where
+    go config expName = do
         cfgStr <- T.readFile config
         --for_ (zip [(0 ::Int)..] cfgs) $ \(i, cfg) ->
         let ?outputFile = config -<.> "csv"

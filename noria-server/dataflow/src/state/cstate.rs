@@ -6,10 +6,10 @@ use prelude::*;
 
 use super::click_ana::ClickAnaState;
 use super::keyed_state::*;
-use super::single_state::{Leaf};
+use super::single_state::Leaf;
 //use super::mk_key::{ MakeKey, key_type_from_row };
 
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 enum Memoization<T> {
     Empty,
     Store(Row),
@@ -18,7 +18,7 @@ enum Memoization<T> {
         // Because, for the time being, I only expect to use this for grouping UDF's
         // this should only ever contain a single row.
         memoization: Option<Row>,
-    }
+    },
 }
 
 impl<T> Memoization<T> {
@@ -29,24 +29,25 @@ impl<T> Memoization<T> {
     fn value_may<'a>(&'a self) -> Option<&'a Row> {
         match self {
             Memoization::Empty => Option::None,
-            Memoization::Store(r) => Option::Some( &r ),
+            Memoization::Store(r) => Option::Some(&r),
             Memoization::Computing { memoization, .. } => memoization.as_ref(),
         }
     }
 
     fn computer_may_mut<'a>(&'a mut self) -> Option<&'a mut T> {
         match self {
-            Memoization::Computing { computer , .. } => Option::Some(computer),
+            Memoization::Computing { computer, .. } => Option::Some(computer),
             _ => Option::None,
         }
     }
 
-    fn iter<'a>(&'a self) -> impl Iterator<Item=&'a Row> {
+    fn iter<'a>(&'a self) -> impl Iterator<Item = &'a Row> {
         match self {
-            Memoization::Empty => Option::None.into_iter(),
-            Memoization::Store(r) => Option::Some(r).into_iter(),
-            Memoization::Computing { memoization, .. } => memoization.as_ref().into_iter(),
+            Memoization::Empty => Option::None,
+            Memoization::Store(r) => Option::Some(r),
+            Memoization::Computing { memoization, .. } => memoization.as_ref(),
         }
+        .into_iter()
     }
 
     fn replace_row(&mut self, item: Row) -> Option<Row> {
@@ -60,11 +61,10 @@ impl<T> Memoization<T> {
                 std::mem::swap(e, o.as_mut().unwrap());
                 o
             }
-            Memoization::Computing {ref mut memoization, .. } => {
-                let mut o = Option::Some(item);
-                std::mem::swap(&mut o, memoization);
-                o
-            }
+            Memoization::Computing {
+                ref mut memoization,
+                ..
+            } => std::mem::replace(memoization, Option::Some(item)),
         }
     }
 
@@ -78,16 +78,11 @@ impl<T> Memoization<T> {
 
     fn drop_row(&mut self) -> Option<Row> {
         match self {
-            Memoization::Computing { ref mut memoization, .. } => {
-                let mut o = Option::None;
-                std::mem::swap(&mut o, memoization);
-                o
-            }
-            _ => {
-                let mut new = Memoization::Empty;
-                std::mem::swap(self, &mut new);
-                new.into_row()
-            }
+            Memoization::Computing {
+                ref mut memoization,
+                ..
+            } => std::mem::replace(memoization, Option::None),
+            _ => std::mem::replace(self, Memoization::Empty).into_row(),
         }
     }
 }
@@ -115,7 +110,7 @@ impl<T> MemoElem<T> {
         self.0.value()
     }
 
-    pub fn singleton_row(r:Row) -> MemoElem<T> {
+    pub fn singleton_row(r: Row) -> MemoElem<T> {
         MemoElem(Memoization::Store(r))
     }
 
@@ -125,17 +120,23 @@ impl<T> MemoElem<T> {
 
     pub fn get_or_init_compute_mut<'a>(&'a mut self) -> &'a mut T
     where
-        T: Default
+        T: Default,
     {
         match self.0 {
-            Memoization::Computing { ref mut computer, .. } => computer,
+            Memoization::Computing {
+                ref mut computer, ..
+            } => computer,
             _ => {
                 let new = Memoization::Computing {
                     computer: Default::default(),
                     memoization: Option::None,
                 };
                 let old = std::mem::replace(&mut self.0, new);
-                if let Memoization::Computing { ref mut computer , ref mut memoization } = self.0 {
+                if let Memoization::Computing {
+                    ref mut computer,
+                    ref mut memoization,
+                } = self.0
+                {
                     std::mem::replace(memoization, old.into_row());
                     computer
                 } else {
@@ -152,7 +153,7 @@ impl<T> Default for MemoElem<T> {
     }
 }
 
-impl <T:SizeOf> SizeOf for MemoElem<T> {
+impl<T: SizeOf> SizeOf for MemoElem<T> {
     fn size_of(&self) -> u64 {
         self.0.size_of()
     }
@@ -176,9 +177,12 @@ impl<T> Leaf for MemoElem<T> {
     }
     fn row_slice(&self) -> &[Row] {
         match self.0 {
-            Memoization::Store(ref e) |
-            Memoization::Computing { memoization: Option::Some( ref e) , .. } => std::slice::from_ref(e),
-            _ => &[]
+            Memoization::Store(ref memo)
+            | Memoization::Computing {
+                memoization: Option::Some(ref memo),
+                ..
+            } => std::slice::from_ref(memo),
+            _ => &[],
         }
     }
 }
@@ -202,8 +206,10 @@ impl<T: SizeOf> DeallocSize for MemoElem<T> {
         match self.0 {
             Memoization::Empty => 0,
             Memoization::Store(ref r) => r.dealloc_size(),
-            Memoization::Computing { ref computer, ref memoization } =>
-                computer.deep_size_of() + memoization.dealloc_size()
+            Memoization::Computing {
+                ref computer,
+                ref memoization,
+            } => computer.deep_size_of() + memoization.dealloc_size(),
         }
     }
 }
@@ -216,7 +222,7 @@ impl<T> SpecialStateWrapper<T> {
     }
 }
 
-impl <T:SizeOf> SizeOf for SpecialStateWrapper<T> {
+impl<T: SizeOf> SizeOf for SpecialStateWrapper<T> {
     fn size_of(&self) -> u64 {
         self.0.size_of()
     }
@@ -227,7 +233,6 @@ impl <T:SizeOf> SizeOf for SpecialStateWrapper<T> {
 }
 
 impl State for super::click_ana::ClickAnaState {
-
     fn add_key(&mut self, columns: &[usize], partial: Option<Vec<Tag>>) {
         self.0.add_key(columns, partial)
     }

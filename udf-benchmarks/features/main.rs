@@ -8,8 +8,9 @@ use serde_derive::Deserialize;
 
 use noria::{Builder, DataType, TableOperation};
 
-#[derive(Deserialize)]
+#[derive(Deserialize,Default)]
 struct EConf {
+    table_file: String,
     query_file: String,
     data_file: String,
     lookup_file: String,
@@ -41,7 +42,7 @@ fn read_file(path: &str) -> std::io::Result<String> {
     Ok(s)
 }
 
-fn get_inputs() -> std::io::Result<(EConf,String, String, String)> {
+fn get_inputs() -> std::io::Result<(EConf,String, String, String, String)> {
     let mut args = std::env::args();
     args.next().unwrap();
     let conf_file = args.next().unwrap();
@@ -49,9 +50,10 @@ fn get_inputs() -> std::io::Result<(EConf,String, String, String)> {
     std::fs::File::open(conf_file)?.read_to_string(&mut buf).unwrap();
     let conf :EConf = toml::from_str(&mut buf).unwrap();
     let exp_query = read_file(&conf.query_file)?;
+    let exp_tables = read_file(&conf.table_file)?;
     let exp_data = read_file(&conf.data_file)?;
     let exp_lookups = read_file(&conf.lookup_file)?;
-    Ok((conf, exp_query, exp_data, exp_lookups))
+    Ok((conf, exp_tables, exp_query, exp_data, exp_lookups))
 }
 
 fn make_deser<T: std::str::FromStr + Into<DataType>>() -> Box<dyn Fn(&str) -> DataType>
@@ -90,8 +92,8 @@ fn deser_lines(lines: &mut std::str::Lines) -> (Vec<Vec<DataType>>, Option<Strin
 
 type TaggedRows = (String, Vec<Vec<DataType>>);
 
-fn get_data() -> (EConf, String, Vec<TaggedRows>, TaggedRows) {
-    let (conf, exp_query, exp_data, exp_lookups) = get_inputs().unwrap();
+fn get_data() -> (EConf, String, String, Vec<TaggedRows>, TaggedRows) {
+    let (conf, exp_tables, exp_query, exp_data, exp_lookups) = get_inputs().unwrap();
     let mut processed_data = Vec::new();
 
     let mut lines = exp_data.lines();
@@ -112,7 +114,7 @@ fn get_data() -> (EConf, String, Vec<TaggedRows>, TaggedRows) {
 
     let (processed_lookups, _) = deser_lines(&mut lookup_lines);
 
-    (conf, exp_query, processed_data, (lookup_label, processed_lookups))
+    (conf, exp_tables, exp_query, processed_data, (lookup_label, processed_lookups))
 }
 
 const SETUP_FOR_VERIFY_STR: Option<&'static str> = option_env!("VERIFY");
@@ -121,8 +123,8 @@ fn is_setup_for_verify() -> bool {
     SETUP_FOR_VERIFY_STR.is_some()
 }
 
-fn main() {
-    let (conf, query, data, lookups) = get_data();
+fn main0() {
+    let (conf, tables, query, data, lookups) = get_data();
     if let Some(ref l) = conf.separate_ops {
         eprintln!("Setting domain control for process {}", std::process::id());
         unsafe {
@@ -135,9 +137,29 @@ fn main() {
         }
     }
     eprintln!("Finished parsing input data");
+
+    // {
+    //     let mut controller = make_test_instance(&conf);
+    //     controller.install_recipe(&tables).unwrap();
+    //     for (table_name, data) in data.clone() {
+    //         let mut table = controller.table(&table_name).unwrap().into_sync();
+    //         let t0 = Instant::now();
+    //         table
+    //             .perform_all(data.into_iter().map(TableOperation::Insert))
+    //             .unwrap();
+    //         let t1 = Instant::now();
+    //         if !is_setup_for_verify() {
+    //             println!("raw_load,{},{}", table_name, (t1 - t0).as_nanos())
+    //         };
+    //     }
+    // }
+
+    // eprintln!("Finished loading probe");
+
     let mut controller = make_test_instance(&conf);
 
-    controller.install_recipe(query).unwrap();
+    controller.install_recipe(tables).unwrap();
+    controller.extend_recipe(query).unwrap();
 
     if let Some(file) = conf.dump_graph {
         use std::io::Write;
@@ -164,7 +186,7 @@ fn main() {
 
     {
         use std::{thread, time};
-        thread::sleep(time::Duration::from_seconds(60 * 5));
+        thread::sleep(time::Duration::from_secs(60 * 5));
     }
 
     let (view_name, mut lookup_data) = lookups;
@@ -191,4 +213,22 @@ fn main() {
     };
 
     eprintln!("Finished running queries");
+}
+
+
+fn main1() {
+    let conf = EConf {
+        ..Default::default()
+    };
+    let mut controller = make_test_instance(&conf);
+
+    controller.install_recipe(read_file("votes.sql").unwrap()).unwrap();
+
+    use std::io::Write;
+    let gr = controller.graphviz().unwrap();
+    write!(std::fs::File::create("votes.dot").unwrap(), "{}", gr).unwrap();
+}
+
+fn main() {
+    main0()
 }

@@ -595,7 +595,7 @@ impl Materializations {
                                                 .find(|c| !index.contains(&c))
                                         });
                                     if let Some(not_shared) = unshared {
-                                        println!("{}", graphviz(graph, true, &self));
+                                        //println!("{}", graphviz(graph, true, &self));
                                         crit!(self.log, "partially overlapping partial indices";
                                                   "parent" => pni.index(),
                                                   "pcols" => ?index,
@@ -603,7 +603,7 @@ impl Materializations {
                                                   "cols" => ?columns,
                                                   "conflict" => not_shared,
                                         );
-                                        unimplemented!();
+                                        //unimplemented!();
                                     }
                                 }
                             } else if self.have.contains_key(&ni) {

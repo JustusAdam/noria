@@ -1,5 +1,5 @@
 [sharding]
-low = 0
+low = 1
 high = 8
 
 [csBasic]
@@ -11,3 +11,15 @@ queries = ["full_ohua"]
 [[csBasic.eventRange]]
 low = 1000
 high = 1300
+
+[[csBasic.eventRange]]
+low = 1300
+high = 1600
+
+[[csBasic.eventRange]]
+low = 1600
+high = 1900
+
+[[csBasic.eventRange]]
+low = 2200
+high = 2600

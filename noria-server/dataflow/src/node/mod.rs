@@ -169,7 +169,10 @@ impl Node {
     }
 
     crate fn make_special_state(&self) -> Option<Box<State>> {
-        Ingredient::make_special_state(&**self)
+        match self.inner {
+            NodeType::Internal(ref n) => Ingredient::make_special_state(n),
+            _ => None
+        }
     }
 }
 
