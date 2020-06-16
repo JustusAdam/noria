@@ -1,0 +1,7 @@
+sharding = [2,4]
+probeScale = 1.0
+noiseScale = 0.0
+noisePool = 10000
+numUsers = 400
+probings = 30
+measureChunkSize = 30

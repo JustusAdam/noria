@@ -39,10 +39,12 @@ import Debug.Trace
 
 import Control.Exception (assert)
 
-data Range a = Range
-    { low :: a
-    , high :: a
-    } deriving (Read, Generic)
+data Range a =
+    Range
+        { low :: a
+        , high :: a
+        }
+    deriving (Read, Generic)
 
 instance Toml.HasCodec a => Toml.HasCodec (Range a) where
     hasCodec = Toml.table Toml.genericCodec
@@ -50,41 +52,49 @@ instance Toml.HasCodec a => Toml.HasCodec (Range a) where
 instance Toml.HasCodec a => Toml.HasItemCodec (Range a) where
     hasItemCodec = Right Toml.genericCodec
 
-data SumComparison = SumComparison
-    { numSelectable :: Word
-    , numGenRange :: [Range Word]
-    , valueLimit :: Range Int
-    , lookupRounds :: Word
-    , lookupsPerRound :: Word
-    , queries :: [T.Text]
-    } deriving (Read, Generic)
+data SumComparison =
+    SumComparison
+        { numSelectable :: Word
+        , numGenRange :: [Range Word]
+        , valueLimit :: Range Int
+        , lookupRounds :: Word
+        , lookupsPerRound :: Word
+        , queries :: [T.Text]
+        }
+    deriving (Read, Generic)
 
 instance Toml.HasCodec SumComparison where
     hasCodec = Toml.table Toml.genericCodec
 
-data ClickstreamEvo = ClickstreamEvo
-    { numUsers :: Word
-    , eventRange :: [Range Word]
-    , boundaryProb :: Float
-    , numLookups :: Word
-    , queries :: [T.Text]
-    } deriving (Read, Generic)
+data ClickstreamEvo =
+    ClickstreamEvo
+        { numUsers :: Word
+        , eventRange :: [Range Word]
+        , boundaryProb :: Float
+        , numLookups :: Word
+        , queries :: [T.Text]
+        }
+    deriving (Read, Generic)
 
 instance Toml.HasCodec ClickstreamEvo where
     hasCodec = Toml.table Toml.genericCodec
 
 type ParallelismRange = Range (Maybe Word)
 
-data ClickstreamSharding = ClickstreamSharding
-    { csBasic :: ClickstreamEvo
-    , sharding :: ParallelismRange
-    } deriving (Read, Generic)
+data ClickstreamSharding =
+    ClickstreamSharding
+        { csBasic :: ClickstreamEvo
+        , sharding :: ParallelismRange
+        }
+    deriving (Read, Generic)
 
-data Separation = Separation
-    { exclusive :: Maybe Bool
-    , ops :: [T.Text]
-    , dump_graph :: Maybe T.Text
-    } deriving Generic
+data Separation =
+    Separation
+        { exclusive :: Maybe Bool
+        , ops :: [T.Text]
+        , dump_graph :: Maybe T.Text
+        }
+    deriving (Generic)
 
 instance Toml.HasCodec Separation where
     hasCodec = Toml.table Toml.genericCodec
@@ -92,22 +102,56 @@ instance Toml.HasCodec Separation where
 instance Toml.HasItemCodec Separation where
     hasItemCodec = Right Toml.genericCodec
 
-data AvgSplitDomain = AvgSplitDomain
-    { basic :: SumComparison
-    , separations :: [Separation]
-    } deriving (Generic)
+data AvgSplitDomain =
+    AvgSplitDomain
+        { basic :: SumComparison
+        , separations :: [Separation]
+        }
+    deriving (Generic)
 
-data EConf = EConf
-    { query_file :: T.Text
-    , table_file :: T.Text
-    , data_file :: T.Text
-    , lookup_file :: T.Text
-    , sharding :: Maybe Word
-    , logging :: Maybe Bool
-    , separate_ops :: Maybe [T.Text]
-    , separate_ops_exclusive :: Maybe Bool
-    , dump_graph :: Maybe T.Text
-    } deriving (Generic)
+data RedesignConf =
+    RedesignConf
+        { sharding :: [Int]
+        , probeScale :: Float
+        , noiseScale :: Float
+        , noisePool :: Int
+        , numUsers :: Int
+        , probings :: Int
+        , measureChunkSize :: Int
+        }
+    deriving (Generic)
+
+instance Toml.HasCodec RedesignConf where
+    hasCodec = Toml.table Toml.genericCodec
+
+data REConf =
+    REConf
+        { num_probes :: Int
+        , num_probings :: Int
+        , num_noise_makers :: Int
+        , noise_pool_size :: Int
+        , shards :: Int
+        , num_users :: Int
+        , table_name :: T.Text
+        , query_name :: T.Text
+        , query_file :: T.Text
+        , measure_chunk_size :: Int
+        }
+    deriving (Generic)
+
+data EConf =
+    EConf
+        { query_file :: T.Text
+        , table_file :: T.Text
+        , data_file :: T.Text
+        , lookup_file :: T.Text
+        , sharding :: Maybe Word
+        , logging :: Maybe Bool
+        , separate_ops :: Maybe [T.Text]
+        , separate_ops_exclusive :: Maybe Bool
+        , dump_graph :: Maybe T.Text
+        }
+    deriving (Generic)
 
 assertM :: Applicative m => Bool -> m ()
 assertM = flip assert (pure ())
@@ -147,6 +191,33 @@ runBenches a =
         "clickstream-sharding" -> clickStreamShardingBench $ tomlDecode a
         "avg-split-domain" ->
             avgSplitDomainBench "avg-split-domain" "SumCount" $ tomlDecode a
+        "redesign" -> redesign $ tomlDecode a
+
+redesign ::
+       (?genericOpts :: GenericOpts, ?outputFile :: FilePath)
+    => RedesignConf
+    -> IO ()
+redesign RedesignConf {..} = do
+    compileAlgo "click_ana.ohuac" "click_ana"
+    withStdOutputFile $ \h -> do
+        hPutStrLn h "Shards,User,Requests,Time"
+        for_ sharding $ \shards -> do
+            res <-
+                runBenchBin
+                    REConf
+                        { num_probes = ceiling $ probeScale * fromIntegral shards
+                        , num_probings = probings
+                        , num_noise_makers = ceiling $ noiseScale * fromIntegral shards
+                        , noise_pool_size = noisePool
+                        , shards = shards
+                        , num_users = numUsers
+                        , table_name = "clicks"
+                        , query_name = "clickstream_ana"
+                        , query_file = T.pack $ takeDirectory ?outputFile </> "query.sql"
+                        , measure_chunk_size = measureChunkSize
+                        }
+            for_ (lines res) $ \(splitOn ',' -> [usr, reqs, time]) ->
+                hPrintf h "%d,%s,%s,%s\n" shards usr reqs time
 
 withStdOutputFile :: (?outputFile :: FilePath) => (Handle -> IO a) -> IO a
 withStdOutputFile = withFile ?outputFile WriteMode
@@ -176,8 +247,12 @@ avgSplitDomainBench baseName tabName AvgSplitDomain {..} =
             basic
 
 runBenchBin ::
-       (?genericOpts :: GenericOpts, ?outputFile :: String)
-    => EConf
+       ( ?genericOpts :: GenericOpts
+       , ?outputFile :: String
+       , Generic c
+       , Toml.GenericCodec (Rep c)
+       )
+    => c
     -> IO String
 runBenchBin cfg = do
     T.writeFile confPath (Toml.encode Toml.genericCodec cfg)
@@ -185,7 +260,8 @@ runBenchBin cfg = do
   where
     confPath = dropExtension ?outputFile ++ "-econf.toml"
 
-basicEConf :: (?outputFile :: String, ?genericOpts :: GenericOpts) => String -> EConf
+basicEConf ::
+       (?outputFile :: String, ?genericOpts :: GenericOpts) => String -> EConf
 basicEConf qfile =
     EConf
         { query_file = T.pack qfile
@@ -330,9 +406,11 @@ configurableClickStreamBench mkConfs writeResults eg@ClickstreamEvo {..} = do
                                 val
                     other -> putStrLn $ "Unparseable: " <> other
         | otherwise =
-            pure $ \cfg query -> \case
-                                     (splitOn ',' -> [phase, _, time]) -> writeResults cfg query phase evr (read time)
-                                     p -> printf "Weird line: %s" p
+            pure $ \cfg query ->
+                \case
+                    (splitOn ',' -> [phase, _, time]) ->
+                        writeResults cfg query phase evr (read time)
+                    p -> printf "Weird line: %s" p
 
 weightedRandom ::
        forall a m. MonadIO m
@@ -480,8 +558,7 @@ configurableSumCompBench queryBaseName tabName mkConf writeResults sc@SumCompari
             replicateM_ (fromIntegral repeat) $
             let queryFile = printf "%s/%s.sql" queryBaseName query
              in for (mkConf queryFile) $ \conf ->
-                    runBenchBin conf >>=
-                    mapM_ (handlerFunc conf query) . lines
+                    runBenchBin conf >>= mapM_ (handlerFunc conf query) . lines
   where
     mkHandlerFunc items
         | isVerify = do
@@ -525,22 +602,24 @@ noriaDir =
            | otherwise -> go (takeDirectory dir)
     GenericOpts {..} = ?genericOpts
 
-data Opts = Opts
-    { expName :: FilePath
-    , configPath :: Maybe FilePath
-    , genericOpts :: GenericOpts
-    }
+data Opts =
+    Opts
+        { expName :: FilePath
+        , configPath :: Maybe FilePath
+        , genericOpts :: GenericOpts
+        }
 
-data GenericOpts = GenericOpts
-    { noRelease :: Bool
-    , forceRegen :: Bool
-    , genOnly :: Bool
-    , repeat :: Word
-    , noriaDirectory :: Maybe FilePath
-    , isVerify :: Bool
-    , recompile :: Bool
-    , dumpGraph :: Maybe String
-    }
+data GenericOpts =
+    GenericOpts
+        { noRelease :: Bool
+        , forceRegen :: Bool
+        , genOnly :: Bool
+        , repeat :: Word
+        , noriaDirectory :: Maybe FilePath
+        , isVerify :: Bool
+        , recompile :: Bool
+        , dumpGraph :: Maybe String
+        }
 
 acParser :: ParserInfo Opts
 acParser = info (helper <*> p) fullDesc
@@ -549,7 +628,10 @@ acParser = info (helper <*> p) fullDesc
         Opts <$> strArgument (metavar "NAME" <> help "Experiment name") <*>
         optional
             (strOption
-                 (long "config" <> metavar "PATH" <> help "Explicitly provide the config name (also sets the path for the experiment. Otherwise the `NAME` is used)")) <*>
+                 (long "config" <>
+                  metavar "PATH" <>
+                  help
+                      "Explicitly provide the config name (also sets the path for the experiment. Otherwise the `NAME` is used)")) <*>
         goptsParser
     goptsParser =
         GenericOpts <$>
@@ -565,7 +647,8 @@ acParser = info (helper <*> p) fullDesc
              long "noria-dir" <> help "Explicitly point to the noria dir") <*>
         switch (long "verify" <> help "Verify output instead of measuring") <*>
         switch (long "force" <> help "Force recompilation") <*>
-        optional (strOption $ long "dump-graph" <> help "Dump the query in this file")
+        optional
+            (strOption $ long "dump-graph" <> help "Dump the query in this file")
 
 allTargets =
     [ "avg"
