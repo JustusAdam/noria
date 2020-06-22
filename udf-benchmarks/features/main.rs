@@ -186,13 +186,6 @@ fn main0() {
     }
 
     eprintln!("Finished loading data");
-
-
-    {
-        use std::{thread, time};
-        thread::sleep(time::Duration::from_secs(60 * 5));
-    }
-
     let (view_name, mut lookup_data) = lookups;
 
     let mut query = controller.view(&view_name).unwrap().into_sync();

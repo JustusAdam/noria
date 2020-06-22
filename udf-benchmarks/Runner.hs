@@ -28,7 +28,7 @@ import System.Directory
 import System.Environment
 import System.Exit (ExitCode(ExitFailure), exitSuccess)
 import System.FilePath
-import System.IO (Handle, IOMode(WriteMode), hPrint, hPutStrLn, withFile)
+import System.IO (Handle, IOMode(WriteMode), hPrint, hPutStrLn, withFile, hPutStr, hPutChar)
 import System.IO.Unsafe (unsafePerformIO)
 import System.Process
 import System.Random
@@ -200,16 +200,16 @@ redesign ::
 redesign RedesignConf {..} = do
     compileAlgo "click_ana.ohuac" "click_ana"
     withStdOutputFile $ \h -> do
-        hPutStrLn h "Shards,User,Requests,Time"
-        for_ sharding $ \shards -> do
+        hPutStrLn h "Noise,User,Requests,Time"
+        for_ [0,1,2,3,4,5,6] $ \noise -> do
             res <-
                 runBenchBin
                     REConf
-                        { num_probes = ceiling $ probeScale * fromIntegral shards
+                        { num_probes = 4 -- ceiling $ probeScale * fromIntegral shards
                         , num_probings = probings
-                        , num_noise_makers = ceiling $ noiseScale * fromIntegral shards
+                        , num_noise_makers = noise -- ceiling $ noiseScale * fromIntegral shards
                         , noise_pool_size = noisePool
-                        , shards = shards
+                        , shards = 4
                         , num_users = numUsers
                         , table_name = "clicks"
                         , query_name = "clickstream_ana"
@@ -217,7 +217,7 @@ redesign RedesignConf {..} = do
                         , measure_chunk_size = measureChunkSize
                         }
             for_ (lines res) $ \(splitOn ',' -> [usr, reqs, time]) ->
-                hPrintf h "%d,%s,%s,%s\n" shards usr reqs time
+                hPrintf h "%d,%s,%s,%s\n" noise usr reqs time
 
 withStdOutputFile :: (?outputFile :: FilePath) => (Handle -> IO a) -> IO a
 withStdOutputFile = withFile ?outputFile WriteMode
@@ -348,11 +348,13 @@ configurableClickStreamBench mkConfs writeResults eg@ClickstreamEvo {..} = do
         clickstreamEvoGen eg evr
         when genOnly exitSuccess
         handlerFunc <- mkHandlerFunc evr
+        printf "Running for events from %i to %i\n" (low evr) (high evr)
         replicateM_ (fromIntegral repeat) $
             for_ queries $ \query -> do
                 let queryFile = printf "clickstream-evo/%s.sql" query
                 for_ (mkConfs queryFile) $ \cfg ->
                     runBenchBin cfg >>= mapM_ (handlerFunc cfg query) . lines
+    writeFile dataFile ""
   where
     GenericOpts {..} = ?genericOpts
     imperativeClickStream dat = do
@@ -438,11 +440,20 @@ randomRangeIO Range {..} = randomRIO (low, high)
 clickstreamEvoGen ::
        (?outputFile :: FilePath) => ClickstreamEvo -> Range Word -> IO ()
 clickstreamEvoGen ClickstreamEvo {..} eventRange' = do
-    withFile dataFile WriteMode $ \h -> do
+    putStrLn "Started data generation"
+    if True
+        then callProcess "./gen_data" ["--num-lookups", show numLookups, "--num-users", show numUsers, "--lookup-file", lookupFile, "--data-file", dataFile, "--boundary-prob", show boundaryProb, "--ev-range-low", show (low eventRange'), "--ev-range-high", show (high eventRange')
+                                      ]
+        else doHere
+    putStrLn "Finished data generation"
+  where
+    doHere = do
+      withFile dataFile WriteMode $ \h -> do
         hPutStrLn h "#clicks"
         hPutStrLn h "i32,i32,i32"
         for_ [0 .. numUsers] $ \i -> do
-            hPrintf h "%i,2,0\n" i
+            hPutStr h (show i)
+            hPutStrLn h ",2,0"
             numEvents <- randomRangeIO eventRange'
             for_ [1 .. numEvents] $ \e -> do
                 assertM $ not (boundaryProb >= 0.5)
@@ -452,8 +463,12 @@ clickstreamEvoGen ClickstreamEvo {..} eventRange' = do
                         , (boundaryProb, 2)
                         , (1.0 - 2.0 * boundaryProb, 0)
                         ]
-                hPrintf h "%i,%i,%i\n" i (ty :: Int) e
-    withFile lookupFile WriteMode $ \h -> do
+                hPutStr h (show i)
+                hPutChar h ','
+                hPutStr h (show (ty :: Int))
+                hPutChar h ','
+                hPutStr h (show e)
+      withFile lookupFile WriteMode $ \h -> do
         hPutStrLn h "#clickstream_ana"
         hPutStrLn h "i32"
         replicateM_ (fromIntegral numLookups) $ do

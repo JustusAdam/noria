@@ -170,6 +170,7 @@ impl <'a, R: rand::Rng> Probe<'a, R> {
             let t2 = time::Instant::now();
             measurements.push((n_reqs, t2 - t1));
             probings -= 1;
+            thread::yield_now();
             // eprintln!("{}: Requests answered", self.my_user);
         }
         // eprintln!("{}: Measuring finished", self.my_user);
@@ -202,10 +203,13 @@ impl <'a, R: rand::Rng> NoiseMaker<'a, R> {
     }
 
     fn run(&mut self, db: &mut Db) {
+        let l = self.requests.len();
         loop {
-            let l = self.requests.len();
-            let ref mut e = self.requests[random_range(self.rng, 0, l)];
-            db.apply(&mut e.0, e.1.clone());
+            for _ in 0..20 {
+                let ref mut e = self.requests[random_range(self.rng, 0, l)];
+                db.apply(&mut e.0, e.1.clone());
+            };
+            thread::yield_now();
         }
     }
 }
