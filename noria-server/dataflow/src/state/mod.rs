@@ -64,7 +64,11 @@ crate trait State: SizeOf + Send {
         Option::None
     }
 
-    // <insert(state-trait-method-def)>
+    // <begin(state-trait-method-def)>
+    fn as_op_s_sequences_0_0_state<'a>(&'a mut self) -> Option<&'a mut SpecialStateWrapper<MemoElem<crate::state::click_ana::iseq::ClickAnaInner>>> {
+    Option::None
+    }
+    // <end(state-trait-method-def)>
 }
 
 #[derive(Clone, Debug)]

@@ -94,7 +94,9 @@ fn type_for_internal_column(
             // ancestors; so keep iterating to try the other paths
             None
         }
-        // <insert(type-resolution-for-generated-nodes)>
+        // <begin(type-resolution-for-generated-nodes)>
+        ops::NodeOperator::Op_s_sequences_0_0udf(ref n) => Some(n.typ()),
+        // <end(type-resolution-for-generated-nodes)>
         ops::NodeOperator::OldGroupingUDF(_) | ops::NodeOperator::OhuaTestOp(_) =>
             unimplemented!(),
         // no other operators should every generate columns

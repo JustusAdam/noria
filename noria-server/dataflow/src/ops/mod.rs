@@ -37,7 +37,9 @@ pub enum NodeOperator {
     ProductUDF(grouped::GroupedOperator<ohua::GroupedUDF<ohua::Product>>),
     OldGroupingUDF(ohua::GroupingUDFOp),
     ClickAnaUDF(ohua::click_ana::ClickAna),
-    // <insert(node-operator-enum)>
+    // <begin(node-operator-enum)>
+    Op_s_sequences_0_0udf(ohua::generated::op_s_sequences_0_0::Op_s_sequences_0_0),
+    // <end(node-operator-enum)>
 }
 
 
@@ -79,7 +81,9 @@ nodeop_from_impl!(NodeOperator::OldGroupingUDF, ohua::GroupingUDFOp);
 nodeop_from_impl!(NodeOperator::GroupingUDF, grouped::GroupedOperator<ohua::GroupedUDF<ohua::TestCount>>);
 nodeop_from_impl!(NodeOperator::ProductUDF, grouped::GroupedOperator<ohua::GroupedUDF<ohua::Product>>);
 nodeop_from_impl!(NodeOperator::ClickAnaUDF, ohua::click_ana::ClickAna);
-// <insert(nodeop-from-impl-macro-call)>
+// <begin(nodeop-from-impl-macro-call)>
+nodeop_from_impl!(NodeOperator::Op_s_sequences_0_0udf, ohua::generated::op_s_sequences_0_0::Op_s_sequences_0_0);
+// <end(nodeop-from-impl-macro-call)>
 
 macro_rules! impl_ingredient_fn_mut {
     ($self:ident, $fn:ident, $( $arg:ident ),* ) => {
@@ -102,7 +106,9 @@ macro_rules! impl_ingredient_fn_mut {
             NodeOperator::ProductUDF(ref mut i) => i.$fn($($arg),*),
             NodeOperator::OldGroupingUDF(ref mut i) => i.$fn($($arg),*),
             NodeOperator::ClickAnaUDF(ref mut i) => i.$fn($($arg),*),
-            // <insert(impl-ingredient-mut-macro)>
+            // <begin(impl-ingredient-mut-macro)>
+            NodeOperator::Op_s_sequences_0_0udf(ref mut i) => i.$fn($($arg),*),
+            // <end(impl-ingredient-mut-macro)>
         }
     }
 }
@@ -128,7 +134,9 @@ macro_rules! impl_ingredient_fn_ref {
             NodeOperator::ProductUDF(ref i) => i.$fn($($arg),*),
             NodeOperator::OldGroupingUDF(ref i) => i.$fn($($arg),*),
             NodeOperator::ClickAnaUDF(ref i) => i.$fn($($arg),*),
-            // <insert(impl-ingredient-ref-macro)>
+            // <begin(impl-ingredient-ref-macro)>
+            NodeOperator::Op_s_sequences_0_0udf(ref i) => i.$fn($($arg),*),
+            // <end(impl-ingredient-ref-macro)>
         }
     }
 }

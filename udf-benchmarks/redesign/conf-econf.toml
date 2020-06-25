@@ -1,0 +1,10 @@
+measure_chunk_size = 30
+noise_pool_size = 10000
+num_noise_makers = 6
+num_probes = 4
+num_probings = 30
+num_users = 400
+query_file = "redesign/query.sql"
+query_name = "clickstream_ana"
+shards = 4
+table_name = "clicks"
