@@ -21,3 +21,7 @@ tokio = "0.1"
 [[bin]]
 name = "features"
 path = "features/main.rs"
+
+[[bin]]
+name = "sir-read-a-lot"
+path = "read_a_lot/main.rs"
