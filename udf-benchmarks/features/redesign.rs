@@ -252,10 +252,11 @@ fn read_file(path: &str) -> std::io::Result<String> {
 
 pub fn main(conf: &Conf) {
     let zk_addr = "127.0.0.1:2181";
-    let mut rt = tokio::runtime::Builder::new().build().unwrap();
-    let mut server_handle = {
+    let mut rt : tokio::runtime::Runtime = tokio::runtime::Builder::new().build().unwrap();
+    let mut server_handle : noria::Handle<noria::LocalAuthority> = {
         let mut b = noria::Builder::default();
         b.set_sharding(Some(conf.shards));
+        b.disable_partial();
         // let auth = noria::consensus::ZookeeperAuthority::new(zk_addr).unwrap();
         // rt.block_on(b.start(Arc::new(auth))).unwrap()
         rt.block_on(b.start_local()).unwrap()
