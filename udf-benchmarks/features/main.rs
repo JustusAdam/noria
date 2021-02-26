@@ -1,6 +1,10 @@
 extern crate noria;
 extern crate serde_derive;
 extern crate toml;
+extern crate rand;
+extern crate tokio;
+
+mod redesign;
 
 use std::io::Read;
 
@@ -21,17 +25,17 @@ struct EConf {
     separate_ops_exclusive: Option<bool>,
 }
 
-fn make_test_builder(conf: &EConf) -> Builder {
+fn make_test_builder(sharding: Option<usize>, logging: bool) -> Builder {
     let mut b = Builder::default();
-    b.set_sharding(conf.sharding);
-    if conf.logging == Some(true) {
+    b.set_sharding(sharding);
+    if logging {
         b.log_with(noria::logger_pls());
     }
     b
 }
 
-fn make_test_instance(conf: &EConf) -> noria::SyncHandle<noria::consensus::LocalAuthority> {
-    make_test_builder(conf).start_simple().unwrap()
+fn make_test_instance(sharding: Option<usize>, logging: bool) -> noria::SyncHandle<noria::consensus::LocalAuthority> {
+    make_test_builder(sharding, logging).start_simple().unwrap()
 }
 
 fn read_file(path: &str) -> std::io::Result<String> {
@@ -156,7 +160,7 @@ fn main0() {
 
     // eprintln!("Finished loading probe");
 
-    let mut controller = make_test_instance(&conf);
+    let mut controller = make_test_instance(conf.sharding, conf.logging.unwrap_or(false));
 
     controller.install_recipe(tables).unwrap();
     controller.extend_recipe(query).unwrap();
@@ -182,13 +186,6 @@ fn main0() {
     }
 
     eprintln!("Finished loading data");
-
-
-    {
-        use std::{thread, time};
-        thread::sleep(time::Duration::from_secs(60 * 5));
-    }
-
     let (view_name, mut lookup_data) = lookups;
 
     let mut query = controller.view(&view_name).unwrap().into_sync();
@@ -216,17 +213,16 @@ fn main0() {
 }
 
 
-fn main1() {
-    let conf = EConf {
-        ..Default::default()
-    };
-    let mut controller = make_test_instance(&conf);
 
-    controller.install_recipe(read_file("votes.sql").unwrap()).unwrap();
+fn main2() {
+    let mut args = std::env::args();
+    args.next().unwrap();
+    let conf_file = args.next().unwrap();
+    let mut buf = String::new();
+    std::fs::File::open(conf_file).unwrap().read_to_string(&mut buf).unwrap();
+    let conf : redesign::Conf = toml::from_str(&mut buf).unwrap();
 
-    use std::io::Write;
-    let gr = controller.graphviz().unwrap();
-    write!(std::fs::File::create("votes.dot").unwrap(), "{}", gr).unwrap();
+    redesign::main(&conf);
 }
 
 fn main2() {
