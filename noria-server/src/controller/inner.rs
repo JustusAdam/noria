@@ -4,6 +4,7 @@ use crate::controller::recipe::Schema;
 use crate::controller::schema;
 use crate::controller::{ControllerState, Migration, Recipe};
 use crate::controller::{Worker, WorkerIdentifier};
+use crate::controller::{add_udtf};
 use crate::coordination::{CoordinationMessage, CoordinationPayload, DomainDescriptor};
 use dataflow::prelude::*;
 use dataflow::{node, payload::ControlReplyPacket, prelude::Packet, DomainBuilder, DomainConfig};
@@ -289,6 +290,15 @@ impl ControllerInner {
                 .map_err(|_| StatusCode::BAD_REQUEST)
                 .map(|args| {
                     self.install_recipe(authority, args)
+                        .map(|r| json::to_string(&r).unwrap())
+                }),
+            (Method::POST, "/install_udtf") => json::from_slice(&body)
+                .map_err(|_| StatusCode::BAD_REQUEST)
+                .map(|args : Vec<String>| {
+                    let mut a = args.into_iter();
+                    let fun_name = a.next().unwrap();
+                    let rest = a.collect();
+                    self.install_udtf(fun_name, rest)
                         .map(|r| json::to_string(&r).unwrap())
                 }),
             (Method::POST, "/set_security_config") => json::from_slice(&body)
@@ -1021,6 +1031,26 @@ impl ControllerInner {
 
     fn set_security_config(&mut self, p: String) -> Result<(), String> {
         self.recipe.set_security_config(&p);
+        Ok(())
+    }
+
+    fn install_udtf(&mut self, name: String, tables: Vec<String>) -> Result<(), String> {
+
+        let bases = {
+            let recipe = &self.recipe;
+            let inc = recipe.sql_inc();
+            let mut bases = Vec::with_capacity(tables.len());
+
+            for table in tables.iter() {
+                let v = inc.get_view(table)?.clone();
+                bases.push(v);
+            }
+            bases
+
+        };
+        self.migrate(|mig| {
+            let parts = add_udtf(name, bases,  mig).unwrap();
+        });
         Ok(())
     }
 

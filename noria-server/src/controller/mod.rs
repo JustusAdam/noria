@@ -32,6 +32,8 @@ mod schema;
 mod security;
 crate mod sql; // crate viz for tests
 
+pub use mir_to_flow::{add_udtf};
+
 #[derive(Clone, Serialize, Deserialize)]
 crate struct ControllerState {
     crate config: Config,

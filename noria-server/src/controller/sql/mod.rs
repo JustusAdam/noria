@@ -153,6 +153,10 @@ impl SqlIncorporator {
         }
     }
 
+    pub (super) fn get_view(&self, name: &str) -> Result<MirNodeRef, String> {
+        self.mir_converter.get_view(name)
+    }
+
     pub(super) fn get_base_schema(&self, name: &str) -> Option<CreateTableStatement> {
         self.base_schemas.get(name).cloned()
     }

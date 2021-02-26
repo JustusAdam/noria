@@ -229,6 +229,16 @@ fn main1() {
     write!(std::fs::File::create("votes.dot").unwrap(), "{}", gr).unwrap();
 }
 
+fn main2() {
+    let conf = Default::default();
+    let mut contr = make_test_instance(&conf);
+    contr.install_recipe("CREATE TABLE test (x int);").unwrap();
+    let udtf_args = vec!["test"];
+    contr.install_udtf("main", &udtf_args).unwrap();
+    let mut main_v = contr.view("main").unwrap().into_sync();
+    print!("{:?}", main_v.lookup(&[0.into()], true).unwrap());
+}
+
 fn main() {
-    main0()
+    main2()
 }

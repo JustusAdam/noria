@@ -387,6 +387,14 @@ impl<A: Authority + 'static> ControllerHandle<A> {
         self.rpc("get_statistics", (), "failed to get stats")
     }
 
+    /// Install a table function as a view and link it to the provided tables
+    pub fn install_udtf(&mut self, name: &str, tables: &[&str])
+                        -> impl Future<Item = (), Error = failure::Error> + Send {
+        let mut args = vec![name];
+        args.extend(tables);
+        self.rpc("install_udtf", args, "failed to install udtf")
+    }
+
     /// Flush all partial state, evicting all rows present.
     ///
     /// `Self::poll_ready` must have returned `Async::Ready` before you call this method.
@@ -575,6 +583,13 @@ where
         let fut = self.handle()?.outputs();
         self.run(fut)
     }
+
+    /// Install a table function as a view and link it to the provided tables
+    pub fn install_udtf(&mut self, name: &str, tables: &[&str]) ->
+        Result<(), failure::Error> {
+            let fut = self.handle()?.install_udtf(name, tables);
+            self.run(fut)
+        }
 
     /// Get a handle to a [`Table`].
     ///

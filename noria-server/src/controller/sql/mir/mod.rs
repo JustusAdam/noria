@@ -150,7 +150,7 @@ impl SqlToMirConverter {
         self.universe = Universe::default();
     }
 
-    fn get_view(&self, view_name: &str) -> Result<MirNodeRef, String> {
+    pub (crate) fn get_view(&self, view_name: &str) -> Result<MirNodeRef, String> {
         self.current
             .get(view_name)
             .ok_or_else(|| format!("Query refers to unknown view \"{}\"", view_name))
@@ -1343,106 +1343,107 @@ impl SqlToMirConverter {
                     ref group_by,
                 } => {
                     if let Some(gr) = udfs::get_graph(function_name) {
+                        panic!("Tried to expand graph udf {} in the controller", function_name);
                         // assert_eq!(group_by, &Option::None);
-                        assert_eq!(node.ancestors.len(), 1);
-                        assert_eq!(input.len(), gr.source.len());
+                        // assert_eq!(node.ancestors.len(), 1);
+                        // assert_eq!(input.len(), gr.source.len());
 
-                        let top = MirNode::new(
-                            format!("{}-enter", &node.name).as_ref(),
-                            self.schema_version,
-                            gr.source,
-                            MirNodeType::Project {
-                                emit: input.clone(),
-                                arithmetic: vec![],
-                                literals: vec![],
-                            },
-                            vec![],
-                            vec![],
-                        );
+                        // let top = MirNode::new(
+                        //     format!("{}-enter", &node.name).as_ref(),
+                        //     self.schema_version,
+                        //     gr.source,
+                        //     MirNodeType::Project {
+                        //         emit: input.clone(),
+                        //         arithmetic: vec![],
+                        //         literals: vec![],
+                        //     },
+                        //     vec![],
+                        //     vec![],
+                        // );
 
-                        let bottom = MirNode::new(
-                            format!("{}-exit", &node.name).as_ref(),
-                            self.schema_version,
-                            node.columns.clone(),
-                            MirNodeType::Project {
-                                emit: gr.sink.1,
-                                arithmetic: vec![],
-                                literals: vec![],
-                            },
-                            vec![],
-                            node.children.clone(),
-                        );
-                        use std::rc::Rc;
-                        for a in node.ancestors.iter() {
-                            vec_replace_with_where(
-                                &mut a.borrow_mut().children,
-                                |e| Rc::ptr_eq(e, &node_ref),
-                                &top,
-                            );
-                        }
-                        for c in node.children.iter() {
-                            vec_replace_with_where(
-                                &mut c.borrow_mut().ancestors,
-                                |e| Rc::ptr_eq(e, &node_ref),
-                                &bottom,
-                            );
-                        }
+                        // let bottom = MirNode::new(
+                        //     format!("{}-exit", &node.name).as_ref(),
+                        //     self.schema_version,
+                        //     node.columns.clone(),
+                        //     MirNodeType::Project {
+                        //         emit: gr.sink.1,
+                        //         arithmetic: vec![],
+                        //         literals: vec![],
+                        //     },
+                        //     vec![],
+                        //     node.children.clone(),
+                        // );
+                        // use std::rc::Rc;
+                        // for a in node.ancestors.iter() {
+                        //     vec_replace_with_where(
+                        //         &mut a.borrow_mut().children,
+                        //         |e| Rc::ptr_eq(e, &node_ref),
+                        //         &top,
+                        //     );
+                        // }
+                        // for c in node.children.iter() {
+                        //     vec_replace_with_where(
+                        //         &mut c.borrow_mut().ancestors,
+                        //         |e| Rc::ptr_eq(e, &node_ref),
+                        //         &bottom,
+                        //     );
+                        // }
 
-                        // I swap this here instead of passing it to `new`
-                        // because `new` inserts backlinks for the `ancestors`.
-                        // However since I have to remove references to the old
-                        // node anyways as well as link the children so I did
-                        // that above in two loops using the same helper
-                        // function which replaces the references to `node` with
-                        // references to `top` and `bottom` respectively
-                        std::mem::swap(&mut top.borrow_mut().ancestors, &mut node.ancestors);
+                        // // I swap this here instead of passing it to `new`
+                        // // because `new` inserts backlinks for the `ancestors`.
+                        // // However since I have to remove references to the old
+                        // // node anyways as well as link the children so I did
+                        // // that above in two loops using the same helper
+                        // // function which replaces the references to `node` with
+                        // // references to `top` and `bottom` respectively
+                        // std::mem::swap(&mut top.borrow_mut().ancestors, &mut node.ancestors);
 
-                        let mut a_list = gr.adjacency_list;
-                        let (new_nodes, adjacencies) = {
-                            let num_nodes = a_list.len() + 2;
+                        // let mut a_list = gr.adjacency_list;
+                        // let (new_nodes, adjacencies) = {
+                        //     let num_nodes = a_list.len() + 2;
 
-                            let mut new_nodes = Vec::with_capacity(num_nodes);
-                            let mut adjacencies: Vec<Vec<usize>> = Vec::with_capacity(num_nodes);
-                            new_nodes.push(top.clone());
-                            new_nodes.push(bottom.clone());
-                            adjacencies.push(Vec::new()); // Source node. Has no parents (in the list)
-                            adjacencies.push(vec![gr.sink.0]); // Sink node. (sole) parent is recorded in graph
-                            adjacencies.extend(a_list.drain(..).enumerate().map(
-                                |(i, (inner, cols, adj))| {
-                                    let name = match inner {
-                                        MirNodeType::UDFBasic {
-                                            ref function_name, ..
-                                        } => function_name.clone(),
-                                        _ => format!("{}-n{}", &node.name, i),
-                                    };
-                                    new_nodes.push(MirNode::new(
-                                        name.as_ref(),
-                                        self.schema_version,
-                                        cols,
-                                        inner,
-                                        vec![],
-                                        vec![],
-                                    ));
-                                    adj
-                                },
-                            ));
+                        //     let mut new_nodes = Vec::with_capacity(num_nodes);
+                        //     let mut adjacencies: Vec<Vec<usize>> = Vec::with_capacity(num_nodes);
+                        //     new_nodes.push(top.clone());
+                        //     new_nodes.push(bottom.clone());
+                        //     adjacencies.push(Vec::new()); // Source node. Has no parents (in the list)
+                        //     adjacencies.push(vec![gr.sink.0]); // Sink node. (sole) parent is recorded in graph
+                        //     adjacencies.extend(a_list.drain(..).enumerate().map(
+                        //         |(i, (inner, cols, adj))| {
+                        //             let name = match inner {
+                        //                 MirNodeType::UDFBasic {
+                        //                     ref function_name, ..
+                        //                 } => function_name.clone(),
+                        //                 _ => format!("{}-n{}", &node.name, i),
+                        //             };
+                        //             new_nodes.push(MirNode::new(
+                        //                 name.as_ref(),
+                        //                 self.schema_version,
+                        //                 cols,
+                        //                 inner,
+                        //                 vec![],
+                        //                 vec![],
+                        //             ));
+                        //             adj
+                        //         },
+                        //     ));
 
-                            (new_nodes, adjacencies)
-                        };
-                        //eprintln!("{:?}", &adjacencies);
-                        let link = |n_ref: MirNodeRef, adj: &Vec<usize>| {
-                            let mut n = n_ref.borrow_mut();
-                            for other_idx in adj {
-                                let other_ref = new_nodes[*other_idx].clone();
-                                let mut other = other_ref.borrow_mut();
-                                other.children.push(n_ref.clone());
-                                n.ancestors.push(other_ref.clone());
-                            }
-                        };
-                        for (self_idx, adj) in adjacencies.iter().enumerate() {
-                            let n_ref = new_nodes[self_idx].clone();
-                            link(n_ref, adj);
-                        }
+                        //     (new_nodes, adjacencies)
+                        // };
+                        // //eprintln!("{:?}", &adjacencies);
+                        // let link = |n_ref: MirNodeRef, adj: &Vec<usize>| {
+                        //     let mut n = n_ref.borrow_mut();
+                        //     for other_idx in adj {
+                        //         let other_ref = new_nodes[*other_idx].clone();
+                        //         let mut other = other_ref.borrow_mut();
+                        //         other.children.push(n_ref.clone());
+                        //         n.ancestors.push(other_ref.clone());
+                        //     }
+                        // };
+                        // for (self_idx, adj) in adjacencies.iter().enumerate() {
+                        //     let n_ref = new_nodes[self_idx].clone();
+                        //     link(n_ref, adj);
+                        // }
                     } else {
                         use udfs::ExecutionType;
                         // HACK This is really just for the udf benchmarks
