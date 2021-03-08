@@ -18,7 +18,7 @@ mod composition_graph;
 pub struct UDFGraph {
     pub adjacency_list: Vec<(MirNodeType, Vec<Column>, Vec<usize>)>,
     pub sink: (usize, Vec<Column>),
-    pub sources: Vec<( String, u32, usize, Vec<Column> )>,
+    pub sources: Vec<(u32, usize, Vec<Column> )>,
 
 }
 
@@ -40,8 +40,8 @@ pub fn get_graph(gr: &String) -> Option<UDFGraph> {
     }
 }
 
-pub fn as_mir_query(name: String, bases: Vec<MirNodeRef>) -> Result<MirQuery, String> {
-    let gr = get_graph(&name).ok_or(format!("No UDTF named {} found", name))?;
+pub fn as_mir_query(name: String, tables: &[String], bases: Vec<MirNodeRef>) -> Result<MirQuery, String> {
+    let gr = get_graph(&name, tables).ok_or(format!("No UDTF named {} found", name))?;
 
     let roots : Vec<MirNodeRef> = bases;
     let schema_version = 0;
@@ -49,18 +49,35 @@ pub fn as_mir_query(name: String, bases: Vec<MirNodeRef>) -> Result<MirQuery, St
     let output : Vec<Column> = Vec::new();
     let successors : Vec<MirNodeRef> = Vec::new();
 
-    let bottom = MirNode::new(
-        format!("{}-exit", &name).as_ref(),
+    let no_node = MirNode::new(
+        "drop me please",
         schema_version,
-        output.clone(),
-        MirNodeType::Project {
-            emit: gr.sink.1,
-            arithmetic: vec![],
-            literals: vec![],
-        },
         vec![],
-        successors.clone(),
+        MirNodeType::Identity,
+        vec![],
+        vec![],
     );
+
+    let key_col_name = format!("{}-gen-key", name);
+    let key_col = Column::new(None, &key_col_name);
+
+    let bottom = {
+        let (parent, ref non_key_cols) = gr.sink;
+        let mut cols = non_key_cols.clone();
+        cols.push(key_col.clone());
+        MirNode::new(
+            format!("{}-exit", &name).as_ref(),
+            schema_version,
+            cols,
+            MirNodeType::Project {
+                emit: non_key_cols.clone(),
+                literals: vec![(key_col_name, 0.into())],
+                arithmetic: vec![],
+            },
+            vec![],
+            successors.clone(),
+        )
+    };
 
     let mut a_list = gr.adjacency_list;
     let (new_nodes, adjacencies) = {
@@ -111,7 +128,27 @@ pub fn as_mir_query(name: String, bases: Vec<MirNodeRef>) -> Result<MirQuery, St
         let n_ref = new_nodes[self_idx].clone();
         link(n_ref, adj);
     }
-    let leaf : MirNodeRef = bottom;
+
+    if let MirNodeType::Leaf{node: ref mut n,..} = bottom.borrow_mut().inner {
+            std::mem::replace(n, new_nodes[gr.sink.0].clone());
+    } else {
+        panic!("impossible");
+    }
+
+    let leaf = {
+        let (parent, cols) = gr.sink;
+        MirNode::new(
+            &name,
+            schema_version,
+            output.clone(),
+            MirNodeType::Leaf {
+                node: bottom.clone(),
+                keys: vec![key_col.clone()],
+            },
+            vec![bottom],
+            vec![],
+        )
+    };
 
     Ok(MirQuery {
         name,

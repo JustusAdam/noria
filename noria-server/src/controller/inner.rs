@@ -1049,7 +1049,7 @@ impl ControllerInner {
 
         };
         self.migrate(|mig| {
-            let parts = add_udtf(name, bases,  mig).unwrap();
+            let parts = add_udtf(name, &tables, bases,  mig).unwrap();
         });
         Ok(())
     }

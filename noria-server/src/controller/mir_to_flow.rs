@@ -17,8 +17,8 @@ use mir::query::{MirQuery, QueryFlowParts};
 use mir::{Column, FlowNode, MirNodeRef};
 use petgraph::graph::NodeIndex;
 
-pub fn add_udtf(name: String, tables: Vec<MirNodeRef>, mig: &mut Migration) -> Result<(), String> {
-    let q = udfs::as_mir_query(name, tables)?;
+pub fn add_udtf(name: String, tables: &[String], bases: Vec<MirNodeRef>, mig: &mut Migration) -> Result<(), String> {
+    let q = udfs::as_mir_query(name, tables, bases)?;
     let table_mapping = None; // Do I need to compute this somehow?
     let sec = false; // I have no idea what this parameter does
     let mut opt_mir = q.optimize(table_mapping, sec);

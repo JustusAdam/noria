@@ -225,9 +225,8 @@ fn main2() {
     redesign::main(&conf);
 }
 
-fn main2() {
-    let conf = Default::default();
-    let mut contr = make_test_instance(&conf);
+fn main3() {
+    let mut contr = make_test_instance(None, true);
     contr.install_recipe("CREATE TABLE test (x int);").unwrap();
     let udtf_args = vec!["test"];
     contr.install_udtf("main", &udtf_args).unwrap();
@@ -236,5 +235,5 @@ fn main2() {
 }
 
 fn main() {
-    main2()
+    main3()
 }

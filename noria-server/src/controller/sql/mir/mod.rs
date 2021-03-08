@@ -1342,7 +1342,8 @@ impl SqlToMirConverter {
                     ref input,
                     ref group_by,
                 } => {
-                    if let Some(gr) = udfs::get_graph(function_name) {
+                    let im_cheating = vec![];
+                    if let Some(gr) = udfs::get_graph(function_name, &im_cheating) {
                         panic!("Tried to expand graph udf {} in the controller", function_name);
                         // assert_eq!(group_by, &Option::None);
                         // assert_eq!(node.ancestors.len(), 1);
