@@ -227,9 +227,20 @@ fn main2() {
 
 fn main3() {
     let mut contr = make_test_instance(None, true);
-    contr.install_recipe("CREATE TABLE test (x int);").unwrap();
+    contr.install_recipe("CREATE TABLE test (x int, is_deleted bool);").unwrap();
+    {
+        let mut table = contr.table("test").unwrap().into_sync();
+        table.insert(vec![1.into(), 0.into()]).unwrap();
+        table.insert(vec![2.into(), 1.into()]).unwrap();
+        table.insert(vec![6.into(), 0.into()]).unwrap();
+        table.insert(vec![8.into(), 1.into()]).unwrap();
+    }
     let udtf_args = vec!["test"];
     contr.install_udtf("main", &udtf_args).unwrap();
+
+    use std::io::Write;
+    let gr = contr.graphviz();
+    write!(std::fs::File::create("main_udtf.dot").unwrap(), "{}", gr.unwrap()).unwrap();
     let mut main_v = contr.view("main").unwrap().into_sync();
     print!("{:?}", main_v.lookup(&[0.into()], true).unwrap());
 }

@@ -4,7 +4,7 @@ use crate::controller::recipe::Schema;
 use crate::controller::schema;
 use crate::controller::{ControllerState, Migration, Recipe};
 use crate::controller::{Worker, WorkerIdentifier};
-use crate::controller::{add_udtf};
+use mir::udfs::{UDTFIncorporator};
 use crate::coordination::{CoordinationMessage, CoordinationPayload, DomainDescriptor};
 use dataflow::prelude::*;
 use dataflow::{node, payload::ControlReplyPacket, prelude::Packet, DomainBuilder, DomainConfig};
@@ -46,6 +46,8 @@ pub(super) struct ControllerInner {
 
     /// Current recipe
     recipe: Recipe,
+
+    udtf_incorporator: Option<UDTFIncorporator>, // For installing udtf's lazily intialzied
 
     pub(super) domains: HashMap<DomainIndex, DomainHandle>,
     pub(in crate::controller) domain_nodes: HashMap<DomainIndex, Vec<NodeIndex>>,
@@ -477,6 +479,7 @@ impl ControllerInner {
             heartbeat_every: state.config.heartbeat_every,
             healthcheck_every: state.config.healthcheck_every,
             recipe,
+            udtf_incorporator: Default::default(),
             quorum: state.config.quorum,
             log,
 
@@ -1035,7 +1038,9 @@ impl ControllerInner {
     }
 
     fn install_udtf(&mut self, name: String, tables: Vec<String>) -> Result<(), String> {
-
+        if self.udtf_incorporator.is_none() {
+            self.udtf_incorporator = Some(UDTFIncorporator::new(self.log.clone()));
+        }
         let bases = {
             let recipe = &self.recipe;
             let inc = recipe.sql_inc();
@@ -1048,10 +1053,16 @@ impl ControllerInner {
             bases
 
         };
+        let q = self.udtf_incorporator.as_ref().ok_or("Corporator must exist now")?.as_mir_query(name, &tables, bases)?;
         self.migrate(|mig| {
-            let parts = add_udtf(name, &tables, bases,  mig).unwrap();
-        });
-        Ok(())
+
+            let table_mapping = None; // Do I need to compute this somehow?
+            let sec = false; // I have no idea what this parameter does
+            let mut opt_mir = q.optimize(table_mapping, sec);
+            let _ = // what should I do with this result?
+                super::mir_to_flow::mir_query_to_flow_parts(&mut opt_mir, mig, table_mapping);
+            Ok(())
+        })
     }
 
     fn apply_recipe(&mut self, mut new: Recipe) -> Result<ActivationResult, String> {
