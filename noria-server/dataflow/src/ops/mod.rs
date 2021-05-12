@@ -37,6 +37,7 @@ pub enum NodeOperator {
     ProductUDF(grouped::GroupedOperator<ohua::GroupedUDF<ohua::Product>>),
     OldGroupingUDF(ohua::GroupingUDFOp),
     ClickAnaUDF(ohua::click_ana::ClickAna),
+    OhuaLt(ohua::lt::Lt),
     // <insert(node-operator-enum)>
 }
 
@@ -79,6 +80,7 @@ nodeop_from_impl!(NodeOperator::OldGroupingUDF, ohua::GroupingUDFOp);
 nodeop_from_impl!(NodeOperator::GroupingUDF, grouped::GroupedOperator<ohua::GroupedUDF<ohua::TestCount>>);
 nodeop_from_impl!(NodeOperator::ProductUDF, grouped::GroupedOperator<ohua::GroupedUDF<ohua::Product>>);
 nodeop_from_impl!(NodeOperator::ClickAnaUDF, ohua::click_ana::ClickAna);
+nodeop_from_impl!(NodeOperator::OhuaLt, ohua::lt::Lt);
 // <insert(nodeop-from-impl-macro-call)>
 
 macro_rules! impl_ingredient_fn_mut {
@@ -102,6 +104,7 @@ macro_rules! impl_ingredient_fn_mut {
             NodeOperator::ProductUDF(ref mut i) => i.$fn($($arg),*),
             NodeOperator::OldGroupingUDF(ref mut i) => i.$fn($($arg),*),
             NodeOperator::ClickAnaUDF(ref mut i) => i.$fn($($arg),*),
+            NodeOperator::OhuaLt(ref mut i) => i.$fn($($arg),*),
             // <insert(impl-ingredient-mut-macro)>
         }
     }
@@ -128,6 +131,7 @@ macro_rules! impl_ingredient_fn_ref {
             NodeOperator::ProductUDF(ref i) => i.$fn($($arg),*),
             NodeOperator::OldGroupingUDF(ref i) => i.$fn($($arg),*),
             NodeOperator::ClickAnaUDF(ref i) => i.$fn($($arg),*),
+            NodeOperator::OhuaLt(ref i) => i.$fn($($arg),*),
             // <insert(impl-ingredient-ref-macro)>
         }
     }

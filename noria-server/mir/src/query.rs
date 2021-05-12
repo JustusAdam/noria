@@ -171,7 +171,7 @@ impl Display for MirQuery {
                 } else {
                     child.borrow().ancestors.len()
                 };
-                assert!(in_edges >= 1);
+                assert!(in_edges >= 1, "{} (real) < 1 (expected) for node {}", in_edges, nd);
                 if in_edges == 1 {
                     // last edge removed
                     node_queue.push_back(child.clone());

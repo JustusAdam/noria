@@ -2,11 +2,11 @@ use crate::node::{MirNode, MirNodeType};
 use column::Column;
 use query::MirQuery;
 use MirNodeRef;
+use std::collections::HashMap;
 
 // <begin(graph-mods)>
-mod composition_graph;
+mod main_graph;
 // <end(graph-mods)>
-
 
 /// IMPORTANT! The indices in the adjacency list are *not correct*. They are all
 /// offset by 2. The idea is that when constructing the graph the first element
@@ -17,7 +17,7 @@ mod composition_graph;
 pub struct UDFGraph {
     pub adjacency_list: Vec<(MirNodeType, Vec<Column>, Vec<usize>)>,
     pub sink: (usize, Vec<Column>),
-    pub sources: Vec<(usize, usize, Vec<Column>)>,
+    pub sources: Vec<Vec<Column>>,
 }
 
 pub enum ExecutionType {
@@ -42,6 +42,7 @@ impl UDTFIncorporator {
          -> UDFGraph>> {
         match gr.as_ref() {
             // <begin(graph-dispatch)>
+            "main" => Some(Box::new(main_graph::mk_graph)),
             // <end(graph-dispatch)>
             _ => None,
         }
@@ -53,7 +54,21 @@ impl UDTFIncorporator {
         tables: &[String],
         bases: Vec<MirNodeRef>,
     ) -> Result<MirQuery, String> {
-        let gr = self.get_graph(&name).ok_or(format!("No UDTF named {} found", name))?(tables);
+        let new_tables =
+        {
+            let mut seen = HashMap::new();
+            tables.iter().map(|t| {
+                if let Some(n) = seen.get_mut(t) {
+                    *n += 1;
+                    format!("{}({})", t, *n)
+                } else {
+                    seen.insert(t, 0);
+                    t.clone()
+                }
+            }).collect::<Vec<_>>()
+        };
+
+        let gr = self.get_graph(&name).ok_or(format!("No UDTF named '{}' found", name))?(&new_tables);
 
         let roots: Vec<MirNodeRef> = bases;
         let schema_version = 0;
@@ -81,49 +96,61 @@ impl UDTFIncorporator {
 
         let mut a_list = gr.adjacency_list;
         let adjacencies =
-            {
-                let num_nodes = a_list.len() // new nodes
-                    + roots.len() // input relation projectsion
-                    + 1; // the bottom/output projection
+        {
+            let num_nodes = a_list.len() // new nodes
+                + roots.len() // input relation projections
+                + 1; // the bottom/output projection
 
-                let mut adjacencies: Vec<(MirNodeRef, Vec<usize>)> = Vec::with_capacity(num_nodes);
-                adjacencies.push((bottom.clone(), vec![gr.sink.0]));
-                adjacencies.extend(roots.iter().zip(gr.sources.iter()).map(
-                    |(r, (idx, _, cols))| {
-                        // Adds a project for each base table
-                        let n = MirNode::new(
-                            format!("project-{}-for-{}", &tables[*idx], &name).as_ref(),
-                            schema_version,
-                            cols.clone(),
-                            MirNodeType::Project {
-                                emit: cols.clone(),
-                                literals: vec![],
-                                arithmetic: vec![],
-                            },
-                            vec![r.clone()],
-                            vec![],
-                        );
-                        (n, vec![])
-                    },
-                ));
-                assert!(gr.sources.len() == roots.len());
-                adjacencies.extend(a_list.drain(..).enumerate().map(|(i, (inner, cols, adj))| {
-                    let name = match inner {
-                        MirNodeType::UDFBasic {
-                            ref function_name, ..
-                        } => function_name.clone(),
-                        _ => format!("{}-n{}", &name, i),
+            assert!(gr.sources.len() == roots.len());
+            let mut adjacencies: Vec<(MirNodeRef, Vec<usize>)> = Vec::with_capacity(num_nodes);
+            adjacencies.push((bottom.clone(), vec![gr.sink.0]));
+            adjacencies.extend(roots.iter().zip(gr.sources.iter()).zip(new_tables.iter().zip(tables.iter())).map(
+                |((r, cols), (new, old))| {
+                    // Adds a project for each base table
+                    let emit_cols =  {
+                        let mut new_cols = cols.clone();
+                        if old != new {
+                            println!("Replacing {} with {}", new, old);
+                            new_cols.iter_mut().for_each(|c| {
+                                assert_eq!(c.table.as_ref(), Some(new));
+                                c.table.replace(old.clone());
+                            })
+                        }
+                        new_cols
                     };
-                    let n =
-                        MirNode::new(name.as_ref(), schema_version, cols, inner, vec![], vec![]);
-                    (n, adj)
-                }));
+                    let n = MirNode::new(
+                        format!("project-{}-for-{}", new, &name).as_ref(),
+                        schema_version,
+                        cols.clone(),
+                        MirNodeType::Project {
+                            emit: emit_cols,
+                            literals: vec![],
+                            arithmetic: vec![],
+                        },
+                        vec![r.clone()],
+                        vec![],
+                    );
+                    (n, vec![])
+                },
+            ));
+            adjacencies.extend(a_list.drain(..).enumerate().map(|(i, (inner, cols, adj))| {
+                let name = match inner {
+                    MirNodeType::UDFBasic {
+                        ref function_name, ..
+                    } => function_name.clone(),
+                    _ => format!("{}-n{}", &name, i),
+                };
+                let n =
+                    MirNode::new(name.as_ref(), schema_version, cols, inner, vec![], vec![]);
+                (n, adj)
+            }));
 
-                adjacencies
-            };
+            adjacencies
+        };
         //eprintln!("{:?}", &adjacencies);
         let link = |n_ref: MirNodeRef, adj: &Vec<usize>| {
             let mut n = n_ref.borrow_mut();
+            debug!(self.log, "Linking {} to {:?}", n.name, adj);
             for other_idx in adj {
                 let other_ref = adjacencies[*other_idx].0.clone();
                 if std::rc::Rc::ptr_eq(&n_ref, &other_ref) {

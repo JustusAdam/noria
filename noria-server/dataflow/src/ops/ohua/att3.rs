@@ -1,4 +1,5 @@
 
+
 use super::super::grouped::{GroupedOperation, GroupedOperator};
 use nom_sql::SqlType;
 use serde::Deserialize;
@@ -308,6 +309,7 @@ pub fn new_simple_function_from_string(
     carry: usize,
 ) -> NodeOperator {
     match name.as_ref() {
+        "ohua.lang/lt" => super::lt::Lt::new(parent, over_cols[0], over_cols[1], carry).into(),
         // <insert(generated-simple-operator-inits)>
         " " => panic!("This is only for type inference"),
         _ => panic!("Unknown simple generated operator: {}", name)

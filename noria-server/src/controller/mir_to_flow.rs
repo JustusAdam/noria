@@ -763,7 +763,7 @@ fn make_join_node(
                 }),
         )
         .collect();
-    assert_eq!(from_left, projected_cols_left.len());
+    assert_eq!(from_left, projected_cols_left.len(), "Unequal number of projected columns {} != {} for node {} and ancestor {}", from_left, projected_cols_left.len(), name, left.borrow());
     assert_eq!(from_right, projected_cols_right.len());
 
     let left_na = left.borrow().flow_node_addr().unwrap();

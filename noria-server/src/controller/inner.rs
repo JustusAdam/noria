@@ -1041,6 +1041,7 @@ impl ControllerInner {
         if self.udtf_incorporator.is_none() {
             self.udtf_incorporator = Some(UDTFIncorporator::new(self.log.clone()));
         }
+        debug!(self.log, "Starting incorporating UDTF '{}'", &name);
         let bases = {
             let recipe = &self.recipe;
             let inc = recipe.sql_inc();
@@ -1053,16 +1054,23 @@ impl ControllerInner {
             bases
 
         };
+        debug!(self.log, "{} bases found", bases.len());
         let q = self.udtf_incorporator.as_ref().ok_or("Corporator must exist now")?.as_mir_query(name, &tables, bases)?;
-        self.migrate(|mig| {
+        debug!(self.log, "Query created, starting migration");
+        let ref log = self.log.clone();
+        self.migrate(|mig| -> Result<(), String> {
 
             let table_mapping = None; // Do I need to compute this somehow?
             let sec = false; // I have no idea what this parameter does
             let mut opt_mir = q.optimize(table_mapping, sec);
+            debug!(log, "MIR optimized, creating flow parts");
             let _ = // what should I do with this result?
                 super::mir_to_flow::mir_query_to_flow_parts(&mut opt_mir, mig, table_mapping);
+            debug!(log, "Finished creating migration, committing");
             Ok(())
-        })
+        })?;
+        debug!(self.log, "Finished migration");
+        Ok(())
     }
 
     fn apply_recipe(&mut self, mut new: Recipe) -> Result<ActivationResult, String> {
