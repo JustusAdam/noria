@@ -4,6 +4,9 @@
 extern crate clap;
 extern crate mysql_async as my;
 
+#[macro_use]
+extern crate failure;
+
 use clap::{App, Arg};
 use futures::future::Either;
 use futures::{Future, IntoFuture, Stream};
@@ -21,6 +24,7 @@ enum Variant {
     Original,
     Noria,
     Natural,
+    Ohua,
 }
 
 #[derive(Clone, Debug)]
@@ -100,6 +104,7 @@ impl trawler::LobstersClient for MysqlTrawler {
                         Variant::Original => ORIGINAL_SCHEMA,
                         Variant::Noria => NORIA_SCHEMA,
                         Variant::Natural => NATURAL_SCHEMA,
+                        Variant::Ohua => NORIA_SCHEMA,
                     };
                     futures::stream::iter_ok(schema.lines())
                         .fold((c, String::new()), move |(c, mut current_q), line| {
@@ -252,6 +257,7 @@ impl trawler::LobstersClient for MysqlTrawler {
             Variant::Original => handle_req!(original, req),
             Variant::Noria => handle_req!(noria, req),
             Variant::Natural => handle_req!(natural, req),
+            Variant::Ohua => handle_req!(ohua, req),
         };
 
         // notifications
@@ -267,6 +273,7 @@ impl trawler::LobstersClient for MysqlTrawler {
                         as Box<dyn Future<Item = my::Conn, Error = my::error::Error> + Send>,
                     Variant::Noria => Box::new(endpoints::noria::notifications(c, uid)),
                     Variant::Natural => Box::new(endpoints::natural::notifications(c, uid)),
+                    Variant::Ohua => Box::new(endpoints::ohua::notifications(c, uid)),
                 })
             }))
         } else {
@@ -319,7 +326,7 @@ fn main() {
             Arg::with_name("queries")
                 .short("q")
                 .long("queries")
-                .possible_values(&["original", "noria", "natural"])
+                .possible_values(&["original", "noria", "natural", "ohua"])
                 .takes_value(true)
                 .required(true)
                 .help("Which set of queries to run"),
@@ -370,6 +377,7 @@ fn main() {
         "original" => Variant::Original,
         "noria" => Variant::Noria,
         "natural" => Variant::Natural,
+        "ohua" => Variant::Ohua,
         _ => unreachable!(),
     };
     let simulate_shards = args
