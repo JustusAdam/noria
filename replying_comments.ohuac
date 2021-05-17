@@ -1,0 +1,145 @@
+
+
+ns wut;
+
+use sf ohua::sql::query::filter;
+use sf ohua::lang::field;
+use sf ohua::lang::field::{is_deleted, user_id, story_id, is_moderated, is_following, upvotes, downvotes,comment_id,parent_comment_id,created_at,reason,updated_at};
+use sf ohua::lang::{eq, not, neq, and, geq,lt};
+
+fn main(ribbons: Stream<Ribbon>, stories: Stream<Story>, comments: Stream<Comment>, also_comments: Stream<Comment>, votes: Stream<Vote>) -> Table<Result> {
+    for ribbon in ribbons.filter(|r| r.is_following) {
+        let c1 = comments
+            .filter(|c| eq(c.story_id, ribbon.story_id));
+        let c2 = c1
+            .filter(|c| neq(c.user_id, ribbon.user_id));
+        let c3 = c2
+            .filter(|c| and(not(c.is_deleted), not(c.is_moderated)));
+        for comment in c3
+            .filter(|x| geq(x.upvotes, x.downvotes))
+        {
+
+            let s1 = stories
+                .filter(|s| eq(s.field::id, comment.story_id));
+
+            // this should error of the target does not exist actually and it also should only return one
+            for story in s1
+                .filter(|x| geq(x.upvotes, x.downvotes))
+            {
+                // This should be None if no parent exists
+                for parent in also_comments.filter(|c| eq(c.field::id, comment.parent_comment_id)) {
+
+                    let v1 = votes
+                        .filter(|v| and(eq(v.user_id, ribbon.user_id), eq(v.comment_id, comment.field::id)));
+                    let v2 = v1;
+                        // Commented out because I need to check how noria does `or` conditions
+                        //.filter(|v| or(eq(parent.user_id, ribbon.user_id),
+                        //             eq(story.user_id, ribbon.user_id)));
+                    for vote in v2
+                        .filter(|v| geq(parent.upvotes, parent.downvotes))
+                    {
+                        ( ribbon.user_id,
+                          comment.field::id,
+                          ribbon.story_id,
+                          comment.parent_comment_id,
+                          comment.created_at,
+                          parent.user_id,
+                          comment.user_id,
+                          story.user_id,
+                          lt(ribbon.updated_at, comment.created_at),
+                          vote.field::vote,
+                          vote.reason
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn main0(ribbons: Stream<Ribbon>) -> Table<Result> {
+    for ribbon in ribbons.filter(|r| r.is_following) {
+        ribbon
+    }
+}
+
+fn main1(ribbons: Stream<Ribbon>, comments: Stream<Comment>) -> Table<Result> {
+    for ribbon in ribbons.filter(|r| r.is_following) {
+        let c1 = comments
+            .filter(|c| eq(c.story_id, ribbon.story_id));
+        let c2 = c1
+            .filter(|c| neq(c.user_id, ribbon.user_id));
+        let c3 = c2
+            .filter(|c| and(not(c.is_deleted), not(c.is_moderated)));
+        for comment in c3
+            .filter(|x| geq(x.upvotes, x.downvotes)) {
+            comment
+        }
+    }
+}
+fn main2(ribbons: Stream<Ribbon>, stories: Stream<Story>,  comments: Stream<Comment>) -> Table<Result> {
+    for ribbon in ribbons.filter(|r| r.is_following) {
+        let c1 = comments
+            .filter(|c| eq(c.story_id, ribbon.story_id));
+        let c2 = c1
+            .filter(|c| neq(c.user_id, ribbon.user_id));
+        let c3 = c2
+            .filter(|c| and(not(c.is_deleted), not(c.is_moderated)));
+        for comment in c3
+            .filter(|x| geq(x.upvotes, x.downvotes)) {
+
+            let s1 = stories
+                .filter(|s| eq(s.field::id, comment.story_id));
+
+            // this should error of the target does not exist actually and it also should only return one
+            for story in s1
+                .filter(|x| geq(x.upvotes, x.downvotes)) {
+                (story.field::id, story.downvotes, story.field::title, comment.field::comment, comment.created_at, ribbon.field::id)
+            }
+        }
+    }
+}
+
+fn main4(ribbons: Stream<Ribbon>, stories: Stream<Story>,  comments: Stream<Comment>, also_comments: Stream<Comment>, votes: Stream<Vote>) -> Table<Result> {
+    for ribbon in ribbons.filter(|r| r.is_following) {
+        let c1 = comments
+            .filter(|c| eq(c.story_id, ribbon.story_id));
+        let c2 = c1
+            .filter(|c| neq(c.user_id, ribbon.user_id));
+        let c3 = c2
+            .filter(|c| and(not(c.is_deleted), not(c.is_moderated)));
+        for comment in c3
+            .filter(|x| geq(x.upvotes, x.downvotes)) {
+
+            let s1 = stories
+                .filter(|s| eq(s.field::id, comment.story_id));
+
+            // this should error of the target does not exist actually and it also should only return one
+            for story in s1
+                .filter(|x| geq(x.upvotes, x.downvotes)) {
+
+                for parent in also_comments.filter(|c| eq(c.field::id, comment.parent_comment_id)) {
+
+                    let v1 = votes
+                        .filter(|v| and(eq(v.user_id, ribbon.user_id), eq(v.comment_id, comment.field::id)));
+                    for vote in v1
+                        .filter(|v| geq(parent.upvotes, parent.downvotes))
+                    {
+                        ( ribbon.user_id,
+                          comment.field::id,
+                          ribbon.story_id,
+                          comment.parent_comment_id,
+                          comment.created_at,
+                          parent.user_id,
+                          comment.user_id,
+                          story.user_id,
+                          lt(ribbon.updated_at, comment.created_at),
+                          vote.field::vote,
+                          vote.reason
+                        )
+                    }
+                }
+            }
+        }
+    }
+}

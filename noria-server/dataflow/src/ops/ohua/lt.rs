@@ -63,7 +63,7 @@ impl Ingredient for Lt {
     }
 
     fn description(&self, _: bool) -> String {
-        "<".into()
+        "lt".into()
     }
 
     fn parent_columns(&self, column: usize) -> Vec<(NodeIndex, Option<usize>)> {

@@ -79,6 +79,11 @@ impl DataGen {
         table.insert(vec![7.into(), self.gen_date(), self.gen_date(), "".into(), 1.into(), 0.into(), NULL, NULL, "First comment".into(), 3.into(), 0.into(), 0.0.into(), NULL, 0.into(), 0.into(), 0.into(), NULL])?;
         table.insert(vec![8.into(), self.gen_date(), self.gen_date(), "".into(), 1.into(), 2.into(), NULL, NULL, "Second Comment".into(), 6.into(), 1.into(), 0.0.into(), NULL, 0.into(), 0.into(), 0.into(), NULL])?;
         table.insert(vec![9.into(), self.gen_date(), self.gen_date(), "".into(), 1.into(), 2.into(), NULL, NULL, "Third Comment".into(), 10.into(), 3.into(), 0.0.into(), NULL, 0.into(), 0.into(), 0.into(), NULL])?;
+
+
+
+        table.insert(vec![10.into(), self.gen_date(), self.gen_date(), "".into(), 5.into(), 6.into(), NULL, NULL, "First Comment".into(), 10.into(), 3.into(), 0.0.into(), NULL, 0.into(), 0.into(), 0.into(), NULL])?;
+        table.insert(vec![11.into(), self.gen_date(), self.gen_date(), "".into(), 5.into(), 6.into(), 10.into(), NULL, "Second Comment".into(), 10.into(), 3.into(), 0.0.into(), NULL, 0.into(), 0.into(), 0.into(), NULL])?;
         Ok(())
     }
 
@@ -93,6 +98,10 @@ impl DataGen {
         table.insert(vec![0.into(), 1.into(), self.gen_date(), self.gen_date(), 0.into(), 2.into()])?;
         table.insert(vec![1.into(), 1.into(), self.gen_date(), self.gen_date(), 1.into(), 1.into()])?;
         table.insert(vec![2.into(), 1.into(), self.gen_date(), self.gen_date(), 2.into(), 0.into()])?;
+
+        table.insert(vec![5.into(), 1.into(), NULL, NULL, 5.into(), 5.into()])?;
+        table.insert(vec![5.into(), 1.into(), NULL, NULL, 6.into(), 5.into()])?;
+
         Ok(())
     }
 
@@ -119,7 +128,11 @@ impl DataGen {
         // `user_is_author` tinyint(1) DEFAULT 0
         table.insert(vec![0.into(), self.gen_date(), NULL, self.gen_str(20), "First Story".into(), NULL, "".into(), 0.into(), 10.into(), 0.into(), 0.into(), 0.0.into(), NULL, NULL, 0.into(), NULL, NULL, NULL, 0.into()])?;
         table.insert(vec![1.into(), self.gen_date(), 1.into(), self.gen_str(20), "Second Story".into(), NULL, "".into(), 0.into(), 1.into(), 2.into(), 0.into(), 0.0.into(), NULL, NULL, 0.into(), NULL, NULL, NULL, 1.into()])?;
-        table.insert(vec![2.into(), self.gen_date(), 2.into(), self.gen_str(20), "Second Story".into(), NULL, "".into(), 0.into(), 1.into(), 2.into(), 0.into(), 0.0.into(), NULL, NULL, 0.into(), NULL, NULL, NULL, 0.into()])?;
+        table.insert(vec![2.into(), self.gen_date(), 2.into(), self.gen_str(20), "Third Story".into(), NULL, "".into(), 0.into(), 1.into(), 2.into(), 0.into(), 0.0.into(), NULL, NULL, 0.into(), NULL, NULL, NULL, 0.into()])?;
+
+
+
+        table.insert(vec![5.into(), self.gen_date(), 2.into(), self.gen_str(20), "Fourth Story".into(), NULL, "".into(), 0.into(), 10.into(), 2.into(), 0.into(), 0.0.into(), NULL, NULL, 0.into(), NULL, NULL, NULL, 0.into()])?;
         Ok(())
     }
 
@@ -152,6 +165,9 @@ impl DataGen {
         table.insert(vec![0.into(), "first".into(), NULL, NULL, self.gen_date(), 1.into(), NULL, "".into(), NULL, NULL, 1.into(), 0.into(), NULL, NULL, 0.into(), 10.into(), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL])?;
         table.insert(vec![1.into(), "second".into(), NULL, NULL, self.gen_date(), 0.into(), NULL, "".into(), NULL, NULL, 0.into(), 0.into(), NULL, NULL, 0.into(), 10.into(), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL])?;
         table.insert(vec![2.into(), "third".into(), NULL, NULL, self.gen_date(), 0.into(), NULL, "".into(), NULL, NULL, 0.into(), 0.into(), NULL, NULL, 0.into(), 10.into(), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL])?;
+
+        table.insert(vec![5.into(), "fourth".into(), NULL, NULL, self.gen_date(), 0.into(), NULL, "".into(), NULL, NULL, 0.into(), 0.into(), NULL, NULL, 0.into(), 10.into(), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL])?;
+        table.insert(vec![6.into(), "fifth".into(), NULL, NULL, self.gen_date(), 0.into(), NULL, "".into(), NULL, NULL, 0.into(), 0.into(), NULL, NULL, 0.into(), 10.into(), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL])?;
         Ok(())
     }
 
@@ -172,6 +188,9 @@ impl DataGen {
         table.insert(vec![6.into(), 1.into(), 2.into(), 1.into(), 1.into(), NULL])?;
         table.insert(vec![7.into(), 0.into(), 2.into(), 1.into(), 0.into(), NULL])?;
         table.insert(vec![8.into(), 2.into(), 2.into(), 2.into(), 1.into(), NULL])?;
+
+        table.insert(vec![9.into(), 5.into(), 2.into(), 11.into(), 1.into(), NULL])?;
+        table.insert(vec![10.into(), 6.into(), 2.into(), 11.into(), 1.into(), NULL])?;
         Ok(())
     }
 
@@ -236,10 +255,24 @@ fn main() {
     }
 
     DataGen::new().load_data(&mut ctrl).unwrap();
+    let udf = "main4";
 
-    ctrl.install_udtf("main", &vec!["read_ribbons", "stories", "comments", "comments", "votes"]).unwrap();
+    // ctrl.install_udtf("main", &vec!["read_ribbons", "stories", "comments", "comments", "votes"]).unwrap();
+    // ctrl.install_udtf("main0", &vec!["read_ribbons"]).unwrap();
+    //ctrl.install_udtf("main1", &vec!["read_ribbons", "comments"]).unwrap();
+    // ctrl.install_udtf("main2", &vec!["read_ribbons", "stories", "comments"]).unwrap();
+    // ctrl.install_udtf(udf, &vec!["read_ribbons", "stories", "comments", "comments"]).unwrap();
+    ctrl.install_udtf(udf, &vec!["read_ribbons", "stories", "comments", "comments", "votes"]).unwrap();
 
-    for i in ctrl.view("main").unwrap().into_sync().lookup(&vec![], true) {
+    {
+        use std::io::Write;
+        let gr = ctrl.graphviz();
+        write!(std::fs::File::create("graph.dot").unwrap(), "{}", gr.unwrap()).unwrap();
+    }
+
+    let mut view = ctrl.view(udf).unwrap().into_sync();
+
+    for i in view.lookup(&vec![0.into()], true) {
         println!("{:?}", i);
     }
 
