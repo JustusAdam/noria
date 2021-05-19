@@ -10,6 +10,8 @@ use rp::{Rng, SeedableRng};
 
 const SCHEMA : &'static str = include_str!("../../noria-benchmarks/lobsters/db-schema/noria.sql");
 
+const SQL_Q : &'static str = include_str!("repl_comm.sql");
+
 const NULL : noria::DataType = noria::DataType::None;
 
 struct DataGen {
@@ -132,7 +134,8 @@ impl DataGen {
 
 
 
-        table.insert(vec![5.into(), self.gen_date(), 2.into(), self.gen_str(20), "Fourth Story".into(), NULL, "".into(), 0.into(), 10.into(), 2.into(), 0.into(), 0.0.into(), NULL, NULL, 0.into(), NULL, NULL, NULL, 0.into()])?;
+        table.insert(vec![5.into(), self.gen_date(), 5.into(), self.gen_str(20), "Fourth Story".into(), NULL, "".into(), 0.into(), 10.into(), 2.into(), 0.into(), 0.0.into(), NULL, NULL, 0.into(), NULL, NULL, NULL, 0.into()])?;
+        table.insert(vec![6.into(), self.gen_date(), 6.into(), self.gen_str(20), "Fifth Story".into(), NULL, "".into(), 0.into(), 10.into(), 2.into(), 0.into(), 0.0.into(), NULL, NULL, 0.into(), NULL, NULL, NULL, 0.into()])?;
         Ok(())
     }
 
@@ -191,6 +194,8 @@ impl DataGen {
 
         table.insert(vec![9.into(), 5.into(), 2.into(), 11.into(), 1.into(), NULL])?;
         table.insert(vec![10.into(), 6.into(), 2.into(), 11.into(), 1.into(), NULL])?;
+        table.insert(vec![9.into(), 5.into(), 5.into(), 11.into(), 1.into(), NULL])?;
+        table.insert(vec![10.into(), 6.into(), 6.into(), 11.into(), 1.into(), NULL])?;
         Ok(())
     }
 
@@ -213,7 +218,7 @@ type LoadRes = Result<(), failure::Error>;
 fn main() {
     let mut ctrl = {
         let mut b = noria::Builder::default();
-        b.log_with(noria::logger_pls());
+        // b.log_with(noria::logger_pls());
         b.start_simple().unwrap()
     };
 
@@ -254,26 +259,42 @@ fn main() {
         }
     }
 
-    DataGen::new().load_data(&mut ctrl).unwrap();
-    let udf = "main4";
+    ctrl.extend_recipe(SQL_Q).unwrap();
+    println!("Query installed");
 
-    // ctrl.install_udtf("main", &vec!["read_ribbons", "stories", "comments", "comments", "votes"]).unwrap();
-    // ctrl.install_udtf("main0", &vec!["read_ribbons"]).unwrap();
-    //ctrl.install_udtf("main1", &vec!["read_ribbons", "comments"]).unwrap();
-    // ctrl.install_udtf("main2", &vec!["read_ribbons", "stories", "comments"]).unwrap();
-    // ctrl.install_udtf(udf, &vec!["read_ribbons", "stories", "comments", "comments"]).unwrap();
-    ctrl.install_udtf(udf, &vec!["read_ribbons", "stories", "comments", "comments", "votes"]).unwrap();
+    DataGen::new().load_data(&mut ctrl).unwrap();
+    let (udf, udf_input_tables) =
+        ("main", vec!["read_ribbons", "stories", "comments", "comments", "votes"])
+        // ("main0", vec!["read_ribbons"])
+        // ("main1", vec!["read_ribbons", "comments"])
+        // ("main2", vec!["read_ribbons", "stories", "comments"])
+        // ("main3", vec!["read_ribbons", "stories", "comments", "comments"])
+        // ("main4", vec!["read_ribbons", "stories", "comments", "comments", "votes"])
+        ;
+
+    ctrl.install_udtf(udf, &udf_input_tables).unwrap();
+    println!("UDTF installed");
 
     {
         use std::io::Write;
         let gr = ctrl.graphviz();
         write!(std::fs::File::create("graph.dot").unwrap(), "{}", gr.unwrap()).unwrap();
     }
+    {
+        let mut view = ctrl.view(udf).expect("UDTF not found").into_sync();
+        // let cols = view.columns();
 
-    let mut view = ctrl.view(udf).unwrap().into_sync();
+        for mut r in view.lookup(&vec![0.into()], true).unwrap().drain(..) {
+            println!("{:?}", r.drain(..).zip(view.columns().iter()).collect::<Vec<_>>());
+        }
+    }
+    // Currently does not work. Is it the nested selects?
+    {
+        let mut view = ctrl.view("replying_comments_original").expect("Replying comments view not found").into_sync();
 
-    for i in view.lookup(&vec![0.into()], true) {
-        println!("{:?}", i);
+        for mut r in view.lookup(&vec![0.into()], true).unwrap().drain(..) {
+            println!("{:?}", r.drain(..).zip(view.columns().iter()).collect::<Vec<_>>());
+        }
     }
 
 

@@ -31,10 +31,13 @@ fn main(ribbons: Stream<Ribbon>, stories: Stream<Story>, comments: Stream<Commen
 
                     let v1 = votes
                         .filter(|v| and(eq(v.user_id, ribbon.user_id), eq(v.comment_id, comment.field::id)));
-                    let v2 = v1;
+                    let v2 = v1
+                        .filter(|v|
                         // Commented out because I need to check how noria does `or` conditions
-                        //.filter(|v| or(eq(parent.user_id, ribbon.user_id),
-                        //             eq(story.user_id, ribbon.user_id)));
+                        // or(eq(parent.user_id, ribbon.user_id),
+                                     eq(story.user_id, ribbon.user_id)
+                        //    )
+                                     );
                     for vote in v2
                         .filter(|v| geq(parent.upvotes, parent.downvotes))
                     {
