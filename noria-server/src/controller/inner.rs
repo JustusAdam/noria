@@ -281,7 +281,12 @@ impl ControllerInner {
                 .map(|args| Ok(json::to_string(&self.table_builder(args)).unwrap())),
             (Method::POST, "/view_builder") => json::from_slice(&body)
                 .map_err(|_| StatusCode::BAD_REQUEST)
-                .map(|args| Ok(json::to_string(&self.view_builder(args)).unwrap())),
+                .map(|args|
+                     Ok(json::to_string(&
+                                        self.view_builder(args).or_else(|| {
+                                            self.install_udtf(args, vec![]).ok().and_then(|_| self.view_builder(args))
+                                        })
+                     ).unwrap())),
             (Method::POST, "/extend_recipe") => json::from_slice(&body)
                 .map_err(|_| StatusCode::BAD_REQUEST)
                 .map(|args| {
@@ -300,7 +305,7 @@ impl ControllerInner {
                     let mut a = args.into_iter();
                     let fun_name = a.next().unwrap();
                     let rest = a.collect();
-                    self.install_udtf(fun_name, rest)
+                    self.install_udtf(&fun_name, rest)
                         .map(|r| json::to_string(&r).unwrap())
                 }),
             (Method::POST, "/set_security_config") => json::from_slice(&body)
@@ -786,6 +791,7 @@ impl ControllerInner {
 
     /// Obtain a `ViewBuilder` that can be sent to a client and then used to query a given
     /// (already maintained) reader node called `name`.
+
     fn view_builder(&self, name: &str) -> Option<ViewBuilder> {
         // first try to resolve the node via the recipe, which handles aliasing between identical
         // queries.
@@ -1037,7 +1043,7 @@ impl ControllerInner {
         Ok(())
     }
 
-    fn install_udtf(&mut self, name: String, tables: Vec<String>) -> Result<(), String> {
+    fn install_udtf(&mut self, name: &str, tables: Vec<String>) -> Result<(), String> {
         if self.udtf_incorporator.is_none() {
             self.udtf_incorporator = Some(UDTFIncorporator::new(self.log.clone()));
         }
@@ -1055,7 +1061,7 @@ impl ControllerInner {
 
         };
         debug!(self.log, "{} bases found", bases.len());
-        let q = self.udtf_incorporator.as_ref().ok_or("Corporator must exist now")?.as_mir_query(name, &tables, bases)?;
+        let q = self.udtf_incorporator.as_ref().ok_or("Incorporator must exist now")?.as_mir_query(name, &tables, bases, |n| self.recipe.sql_inc().get_view(n).unwrap().clone())?;
         debug!(self.log, "Query created, starting migration");
         let ref log = self.log.clone();
         self.migrate(|mig| -> Result<(), String> {

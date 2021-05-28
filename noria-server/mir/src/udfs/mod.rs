@@ -8,6 +8,7 @@ use std::collections::HashMap;
 mod main_graph;
 // <end(graph-mods)>
 
+pub type Columns = Vec<Column>;
 /// IMPORTANT! The indices in the adjacency list are *not correct*. They are all
 /// offset by 2. The idea is that when constructing the graph the first element
 /// of the `MirNode` vector is the parent node and the last one is the final
@@ -15,9 +16,9 @@ mod main_graph;
 /// this setup the indices then directly correspond to the indices in the
 /// resulting vector.
 pub struct UDFGraph {
-    pub adjacency_list: Vec<(MirNodeType, Vec<Column>, Vec<usize>)>,
-    pub sink: (usize, Vec<Column>),
-    pub sources: Vec<Vec<Column>>,
+    pub adjacency_list: Vec<(MirNodeType, Columns, Vec<usize>)>,
+    pub sink: (usize, Columns),
+    pub sources: ( Vec<Columns>, Vec<(String, Columns)> ),
 }
 
 pub enum ExecutionType {
@@ -48,13 +49,14 @@ impl UDTFIncorporator {
         }
     }
 
-    pub fn as_mir_query(
+    pub fn as_mir_query<F : Fn(&str) -> MirNodeRef>(
         &self,
-        name: String,
+        name: &str,
         tables: &[String],
         bases: Vec<MirNodeRef>,
+        resolve_named: F,
     ) -> Result<MirQuery, String> {
-        let new_tables =
+        let mut new_tables =
         {
             let mut seen = HashMap::new();
             tables.iter().map(|t| {
@@ -69,6 +71,8 @@ impl UDTFIncorporator {
         };
 
         let gr = self.get_graph(&name).ok_or(format!("No UDTF named '{}' found", name))?(&new_tables);
+
+        new_tables.extend(gr.sources.1.iter().map(|(n, _)| n.clone()));
 
         let roots: Vec<MirNodeRef> = bases;
         let schema_version = 0;
@@ -99,12 +103,14 @@ impl UDTFIncorporator {
         {
             let num_nodes = a_list.len() // new nodes
                 + roots.len() // input relation projections
+                + gr.sources.1.len()
                 + 1; // the bottom/output projection
 
-            assert!(gr.sources.len() == roots.len());
+            assert!(gr.sources.0.len() == roots.len());
             let mut adjacencies: Vec<(MirNodeRef, Vec<usize>)> = Vec::with_capacity(num_nodes);
+            let mir_nodes_for_named_sources = gr.sources.1.iter().map(|(n,_)| resolve_named(n)).collect::<Vec<_>>();
             adjacencies.push((bottom.clone(), vec![gr.sink.0]));
-            adjacencies.extend(roots.iter().zip(gr.sources.iter()).zip(new_tables.iter().zip(tables.iter())).map(
+            adjacencies.extend(roots.iter().zip(gr.sources.0.iter()).chain(mir_nodes_for_named_sources.iter().zip(gr.sources.1.iter().map(|a| &a.1))).zip(new_tables.iter().zip(tables.iter())).map(
                 |((r, cols), (new, old))| {
                     // Adds a project for each base table
                     let emit_cols =  {
@@ -178,7 +184,7 @@ impl UDTFIncorporator {
                 vec![],
             )
         };
-
+        let name = name.to_string();
         let q = MirQuery { name, roots, leaf };
 
         debug!(self.log, "Created mir query {}", &q);
