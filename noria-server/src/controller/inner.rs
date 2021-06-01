@@ -4,12 +4,12 @@ use crate::controller::recipe::Schema;
 use crate::controller::schema;
 use crate::controller::{ControllerState, Migration, Recipe};
 use crate::controller::{Worker, WorkerIdentifier};
-use mir::udfs::{UDTFIncorporator};
 use crate::coordination::{CoordinationMessage, CoordinationPayload, DomainDescriptor};
 use dataflow::prelude::*;
 use dataflow::{node, payload::ControlReplyPacket, prelude::Packet, DomainBuilder, DomainConfig};
 use hyper::{self, Method, StatusCode};
 use mio::net::TcpListener;
+use mir::udfs::UDTFIncorporator;
 use nom_sql::ColumnSpecification;
 use noria::builders::*;
 use noria::channel::tcp::{SendError, TcpSender};
@@ -281,12 +281,14 @@ impl ControllerInner {
                 .map(|args| Ok(json::to_string(&self.table_builder(args)).unwrap())),
             (Method::POST, "/view_builder") => json::from_slice(&body)
                 .map_err(|_| StatusCode::BAD_REQUEST)
-                .map(|args|
-                     Ok(json::to_string(&
-                                        self.view_builder(args).or_else(|| {
-                                            self.install_udtf(args, vec![]).ok().and_then(|_| self.view_builder(args))
-                                        })
-                     ).unwrap())),
+                .map(|args| {
+                    Ok(json::to_string(&self.view_builder(args).or_else(|| {
+                        self.install_udtf(args, vec![])
+                            .ok()
+                            .and_then(|_| self.view_builder(args))
+                    }))
+                    .unwrap())
+                }),
             (Method::POST, "/extend_recipe") => json::from_slice(&body)
                 .map_err(|_| StatusCode::BAD_REQUEST)
                 .map(|args| {
@@ -301,7 +303,7 @@ impl ControllerInner {
                 }),
             (Method::POST, "/install_udtf") => json::from_slice(&body)
                 .map_err(|_| StatusCode::BAD_REQUEST)
-                .map(|args : Vec<String>| {
+                .map(|args: Vec<String>| {
                     let mut a = args.into_iter();
                     let fun_name = a.next().unwrap();
                     let rest = a.collect();
@@ -1058,14 +1060,18 @@ impl ControllerInner {
                 bases.push(v);
             }
             bases
-
         };
         debug!(self.log, "{} bases found", bases.len());
-        let q = self.udtf_incorporator.as_ref().ok_or("Incorporator must exist now")?.as_mir_query(name, &tables, bases, |n| self.recipe.sql_inc().get_view(n).unwrap().clone())?;
+        let q = self
+            .udtf_incorporator
+            .as_ref()
+            .ok_or("Incorporator must exist now")?
+            .as_mir_query(name, &tables, bases, |n| {
+                self.recipe.sql_inc().get_view(n).unwrap().clone()
+            })?;
         debug!(self.log, "Query created, starting migration");
         let ref log = self.log.clone();
         self.migrate(|mig| -> Result<(), String> {
-
             let table_mapping = None; // Do I need to compute this somehow?
             let sec = false; // I have no idea what this parameter does
             let mut opt_mir = q.optimize(table_mapping, sec);
