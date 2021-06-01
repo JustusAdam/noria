@@ -102,7 +102,7 @@ impl DataGen {
         table.insert(vec![2.into(), 1.into(), self.gen_date(), self.gen_date(), 2.into(), 0.into()])?;
 
         table.insert(vec![5.into(), 1.into(), NULL, NULL, 5.into(), 5.into()])?;
-        table.insert(vec![5.into(), 1.into(), NULL, NULL, 6.into(), 5.into()])?;
+        table.insert(vec![6.into(), 1.into(), NULL, NULL, 6.into(), 5.into()])?;
 
         Ok(())
     }
@@ -194,8 +194,8 @@ impl DataGen {
 
         table.insert(vec![9.into(), 5.into(), 2.into(), 11.into(), 1.into(), NULL])?;
         table.insert(vec![10.into(), 6.into(), 2.into(), 11.into(), 1.into(), NULL])?;
-        table.insert(vec![9.into(), 5.into(), 5.into(), 11.into(), 1.into(), NULL])?;
-        table.insert(vec![10.into(), 6.into(), 6.into(), 11.into(), 1.into(), NULL])?;
+        table.insert(vec![11.into(), 5.into(), 5.into(), 11.into(), 1.into(), NULL])?;
+        table.insert(vec![12.into(), 6.into(), 6.into(), 11.into(), 1.into(), NULL])?;
         Ok(())
     }
 
@@ -264,12 +264,13 @@ fn main() {
 
     DataGen::new().load_data(&mut ctrl).unwrap();
     let (udf, udf_input_tables) =
-        ("main", vec!["read_ribbons", "stories", "comments", "comments", "votes"])
+        // ("main", vec!["read_ribbons", "stories", "comments", "comments", "votes"])
         // ("main0", vec!["read_ribbons"])
         // ("main1", vec!["read_ribbons", "comments"])
         // ("main2", vec!["read_ribbons", "stories", "comments"])
         // ("main3", vec!["read_ribbons", "stories", "comments", "comments"])
         // ("main4", vec!["read_ribbons", "stories", "comments", "comments", "votes"])
+        ("main6", vec![])
         ;
 
     ctrl.install_udtf(udf, &udf_input_tables).unwrap();
@@ -289,13 +290,13 @@ fn main() {
         }
     }
     // Currently does not work. Is it the nested selects?
-    {
-        let mut view = ctrl.view("replying_comments_original").expect("Replying comments view not found").into_sync();
+    // {
+    //     let mut view = ctrl.view("replying_comments_original").expect("Replying comments view not found").into_sync();
 
-        for mut r in view.lookup(&vec![0.into()], true).unwrap().drain(..) {
-            println!("{:?}", r.drain(..).zip(view.columns().iter()).collect::<Vec<_>>());
-        }
-    }
+    //     for mut r in view.lookup(&vec![0.into()], true).unwrap().drain(..) {
+    //         println!("{:?}", r.drain(..).zip(view.columns().iter()).collect::<Vec<_>>());
+    //     }
+    // }
 
 
 }

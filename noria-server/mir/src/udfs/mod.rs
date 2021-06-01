@@ -39,8 +39,7 @@ impl UDTFIncorporator {
         self.get_graph(name).is_some()
     }
 
-    fn get_graph(&self, gr: &str) -> Option<Box<dyn Fn(&[String])
-         -> UDFGraph>> {
+    fn get_graph(&self, gr: &str) -> Option<Box<dyn Fn(&[String]) -> UDFGraph>> {
         match gr.as_ref() {
             // <begin(graph-dispatch)>
             "main" => Some(Box::new(main_graph::mk_graph)),
@@ -72,9 +71,7 @@ impl UDTFIncorporator {
 
         let gr = self.get_graph(&name).ok_or(format!("No UDTF named '{}' found", name))?(&new_tables);
 
-        new_tables.extend(gr.sources.1.iter().map(|(n, _)| n.clone()));
-
-        let roots: Vec<MirNodeRef> = bases;
+        let mut roots: Vec<MirNodeRef> = bases;
         let schema_version = 0;
 
         let key_col_name = format!("{}-gen-key", name);
@@ -99,6 +96,7 @@ impl UDTFIncorporator {
         };
 
         let mut a_list = gr.adjacency_list;
+        let mut named_sources : Vec<MirNodeRef> = gr.sources.1.iter().map(|(n, _)| resolve_named(n)).collect();
         let adjacencies =
         {
             let num_nodes = a_list.len() // new nodes
@@ -108,9 +106,8 @@ impl UDTFIncorporator {
 
             assert!(gr.sources.0.len() == roots.len());
             let mut adjacencies: Vec<(MirNodeRef, Vec<usize>)> = Vec::with_capacity(num_nodes);
-            let mir_nodes_for_named_sources = gr.sources.1.iter().map(|(n,_)| resolve_named(n)).collect::<Vec<_>>();
             adjacencies.push((bottom.clone(), vec![gr.sink.0]));
-            adjacencies.extend(roots.iter().zip(gr.sources.0.iter()).chain(mir_nodes_for_named_sources.iter().zip(gr.sources.1.iter().map(|a| &a.1))).zip(new_tables.iter().zip(tables.iter())).map(
+            adjacencies.extend(roots.iter().zip(gr.sources.0.iter()).zip(new_tables.iter().zip(tables.iter())).map(
                 |((r, cols), (new, old))| {
                     // Adds a project for each base table
                     let emit_cols =  {
@@ -134,6 +131,24 @@ impl UDTFIncorporator {
                             arithmetic: vec![],
                         },
                         vec![r.clone()],
+                        vec![],
+                    );
+                    (n, vec![])
+                },
+            ));
+            adjacencies.extend(gr.sources.1.iter().zip(named_sources.iter()).map(
+                |((name, cols), n)| {
+                    // Adds a project for each base table
+                    let n = MirNode::new(
+                        format!("project-{}", &name).as_ref(),
+                        schema_version,
+                        cols.clone(),
+                        MirNodeType::Project {
+                            emit: cols.clone(),
+                            literals: vec![],
+                            arithmetic: vec![],
+                        },
+                        vec![n.clone()],
                         vec![],
                     );
                     (n, vec![])
@@ -171,6 +186,7 @@ impl UDTFIncorporator {
             link(n_ref.clone(), adj);
         }
 
+
         let leaf = {
             MirNode::new(
                 &name,
@@ -184,6 +200,7 @@ impl UDTFIncorporator {
                 vec![],
             )
         };
+        roots.extend(named_sources.drain(..));
         let name = name.to_string();
         let q = MirQuery { name, roots, leaf };
 
