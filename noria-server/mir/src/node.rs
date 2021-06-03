@@ -475,7 +475,10 @@ pub enum MirNodeType {
         function_name: String,
         indices: Vec<Column>,
         execution_type: super::udfs::ExecutionType,
-    }
+    },
+    Trace {
+        tag : usize,
+    },
 }
 
 impl MirNodeType {

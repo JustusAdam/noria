@@ -15,6 +15,7 @@ pub mod topk;
 pub mod trigger;
 pub mod union;
 pub mod ohua;
+pub mod trace;
 
 #[derive(Clone, Serialize, Deserialize)]
 #[allow(clippy::large_enum_variant)]
@@ -39,6 +40,7 @@ pub enum NodeOperator {
     ClickAnaUDF(ohua::click_ana::ClickAna),
     OhuaLt(ohua::lt::Lt),
     // <insert(node-operator-enum)>
+    Trace(trace::Trace),
 }
 
 
@@ -82,6 +84,7 @@ nodeop_from_impl!(NodeOperator::ProductUDF, grouped::GroupedOperator<ohua::Group
 nodeop_from_impl!(NodeOperator::ClickAnaUDF, ohua::click_ana::ClickAna);
 nodeop_from_impl!(NodeOperator::OhuaLt, ohua::lt::Lt);
 // <insert(nodeop-from-impl-macro-call)>
+nodeop_from_impl!(NodeOperator::Trace, trace::Trace);
 
 macro_rules! impl_ingredient_fn_mut {
     ($self:ident, $fn:ident, $( $arg:ident ),* ) => {
@@ -106,6 +109,7 @@ macro_rules! impl_ingredient_fn_mut {
             NodeOperator::ClickAnaUDF(ref mut i) => i.$fn($($arg),*),
             NodeOperator::OhuaLt(ref mut i) => i.$fn($($arg),*),
             // <insert(impl-ingredient-mut-macro)>
+            NodeOperator::Trace(ref mut i) => i.$fn($($arg),*),
         }
     }
 }
@@ -133,6 +137,7 @@ macro_rules! impl_ingredient_fn_ref {
             NodeOperator::ClickAnaUDF(ref i) => i.$fn($($arg),*),
             NodeOperator::OhuaLt(ref i) => i.$fn($($arg),*),
             // <insert(impl-ingredient-ref-macro)>
+            NodeOperator::Trace(ref i) => i.$fn($($arg),*),
         }
     }
 }

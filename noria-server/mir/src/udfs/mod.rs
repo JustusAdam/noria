@@ -18,7 +18,7 @@ pub type Columns = Vec<Column>;
 pub struct UDFGraph {
     pub adjacency_list: Vec<(MirNodeType, Columns, Vec<usize>)>,
     pub sink: (usize, Columns),
-    pub sources: ( Vec<Columns>, Vec<(String, Columns)> ),
+    pub sources: (Vec<Columns>, Vec<(String, Columns)>),
 }
 
 pub enum ExecutionType {
@@ -48,28 +48,32 @@ impl UDTFIncorporator {
         }
     }
 
-    pub fn as_mir_query<F : Fn(&str) -> MirNodeRef>(
+    pub fn as_mir_query<F: Fn(&str) -> MirNodeRef>(
         &self,
         name: &str,
         tables: &[String],
         bases: Vec<MirNodeRef>,
         resolve_named: F,
     ) -> Result<MirQuery, String> {
-        let mut new_tables =
-        {
+        let mut new_tables = {
             let mut seen = HashMap::new();
-            tables.iter().map(|t| {
-                if let Some(n) = seen.get_mut(t) {
-                    *n += 1;
-                    format!("{}({})", t, *n)
-                } else {
-                    seen.insert(t, 0);
-                    t.clone()
-                }
-            }).collect::<Vec<_>>()
+            tables
+                .iter()
+                .map(|t| {
+                    if let Some(n) = seen.get_mut(t) {
+                        *n += 1;
+                        format!("{}({})", t, *n)
+                    } else {
+                        seen.insert(t, 0);
+                        t.clone()
+                    }
+                })
+                .collect::<Vec<_>>()
         };
 
-        let gr = self.get_graph(&name).ok_or(format!("No UDTF named '{}' found", name))?(&new_tables);
+        let gr = self
+            .get_graph(&name)
+            .ok_or(format!("No UDTF named '{}' found", name))?(&new_tables);
 
         let mut roots: Vec<MirNodeRef> = bases;
         let schema_version = 0;
@@ -96,46 +100,56 @@ impl UDTFIncorporator {
         };
 
         let mut a_list = gr.adjacency_list;
-        let mut named_sources : Vec<MirNodeRef> = gr.sources.1.iter().map(|(n, _)| resolve_named(n)).collect();
-        let adjacencies =
-        {
-            let num_nodes = a_list.len() // new nodes
-                + roots.len() // input relation projections
-                + gr.sources.1.len()
-                + 1; // the bottom/output projection
-
+        let mut named_sources: Vec<MirNodeRef> =
+            gr.sources.1.iter().map(|(n, _)| resolve_named(n)).collect();
+        let num_nodes = a_list.len() // new nodes
+            + roots.len() // input relation projections
+            + gr.sources.1.len() // named input relation projections
+            + 1; // the bottom/output projection
+        let trace_these: Vec<_> = std::env::var("NORIA_TRACE_NODES")
+            .map(|s| {
+                s.split(",")
+                    .map(|s| s.parse::<usize>().unwrap())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_else(|_| vec![]);
+        let adjacencies = {
             assert!(gr.sources.0.len() == roots.len());
             let mut adjacencies: Vec<(MirNodeRef, Vec<usize>)> = Vec::with_capacity(num_nodes);
             adjacencies.push((bottom.clone(), vec![gr.sink.0]));
-            adjacencies.extend(roots.iter().zip(gr.sources.0.iter()).zip(new_tables.iter().zip(tables.iter())).map(
-                |((r, cols), (new, old))| {
-                    // Adds a project for each base table
-                    let emit_cols =  {
-                        let mut new_cols = cols.clone();
-                        if old != new {
-                            println!("Replacing {} with {}", new, old);
-                            new_cols.iter_mut().for_each(|c| {
-                                assert_eq!(c.table.as_ref(), Some(new));
-                                c.table.replace(old.clone());
-                            })
-                        }
-                        new_cols
-                    };
-                    let n = MirNode::new(
-                        format!("project-{}-for-{}", new, &name).as_ref(),
-                        schema_version,
-                        cols.clone(),
-                        MirNodeType::Project {
-                            emit: emit_cols,
-                            literals: vec![],
-                            arithmetic: vec![],
-                        },
-                        vec![r.clone()],
-                        vec![],
-                    );
-                    (n, vec![])
-                },
-            ));
+            adjacencies.extend(
+                roots
+                    .iter()
+                    .zip(gr.sources.0.iter())
+                    .zip(new_tables.iter().zip(tables.iter()))
+                    .map(|((r, cols), (new, old))| {
+                        // Adds a project for each base table
+                        let emit_cols = {
+                            let mut new_cols = cols.clone();
+                            if old != new {
+                                println!("Replacing {} with {}", new, old);
+                                new_cols.iter_mut().for_each(|c| {
+                                    assert_eq!(c.table.as_ref(), Some(new));
+                                    c.table.replace(old.clone());
+                                })
+                            }
+                            new_cols
+                        };
+                        let n = MirNode::new(
+                            format!("project-{}-for-{}", new, &name).as_ref(),
+                            schema_version,
+                            cols.clone(),
+                            MirNodeType::Project {
+                                emit: emit_cols,
+                                literals: vec![],
+                                arithmetic: vec![],
+                            },
+                            vec![r.clone()],
+                            vec![],
+                        );
+                        (n, vec![])
+                    }),
+            );
             adjacencies.extend(gr.sources.1.iter().zip(named_sources.iter()).map(
                 |((name, cols), n)| {
                     // Adds a project for each base table
@@ -161,13 +175,12 @@ impl UDTFIncorporator {
                     } => function_name.clone(),
                     _ => format!("{}-n{}", &name, i),
                 };
-                let n =
-                    MirNode::new(name.as_ref(), schema_version, cols, inner, vec![], vec![]);
+                let n = MirNode::new(name.as_ref(), schema_version, cols, inner, vec![], vec![]);
                 (n, adj)
             }));
-
             adjacencies
         };
+        assert_eq!(adjacencies.len(), num_nodes);
         //eprintln!("{:?}", &adjacencies);
         let link = |n_ref: MirNodeRef, adj: &Vec<usize>| {
             let mut n = n_ref.borrow_mut();
@@ -185,7 +198,28 @@ impl UDTFIncorporator {
         for (n_ref, adj) in adjacencies.iter() {
             link(n_ref.clone(), adj);
         }
-
+        for idx in trace_these {
+            println!("Tracing {}", idx);
+            let n = &adjacencies[idx].0;
+            let cols = n.borrow().columns.clone();
+            let mut outs = vec![];
+            std::mem::swap(&mut n.borrow_mut().children, &mut outs);
+            let new = MirNode::new(
+                &format!("Tracer-{}", idx),
+                schema_version,
+                cols,
+                MirNodeType::Trace { tag: idx },
+                vec![n.clone()],
+                outs
+            );
+            for c in new.borrow().children() {
+                for a in c.borrow_mut().ancestors.iter_mut() {
+                    if std::rc::Rc::ptr_eq(a, n) {
+                        *a = new.clone()
+                    }
+                }
+            }
+        }
 
         let leaf = {
             MirNode::new(
@@ -201,6 +235,9 @@ impl UDTFIncorporator {
             )
         };
         roots.extend(named_sources.drain(..));
+        for root in roots.iter() {
+            assert_ne!(root.borrow().children().len(), 0);
+        }
         let name = name.to_string();
         let q = MirQuery { name, roots, leaf };
 

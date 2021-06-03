@@ -240,6 +240,19 @@ fn mir_node_to_flow_parts(
                         table_mapping,
                     )
                 }
+                MirNodeType::Trace{tag} => {
+                    assert_eq!(mir_node.ancestors.len(), 1);
+                    let parent = mir_node.ancestors[0].clone();
+                    let parent_na = parent.borrow().flow_node_addr().unwrap();
+                    let column_names = column_names(mir_node.columns.as_slice());
+
+                    let node = mig.add_ingredient(
+                        String::from(name),
+                        column_names.as_slice(),
+                        ops::trace::Trace::new(tag, parent_na),
+                    );
+                    FlowNode::New(node)
+                }
                 MirNodeType::Identity => {
                     assert_eq!(mir_node.ancestors.len(), 1);
                     let parent = mir_node.ancestors[0].clone();
