@@ -72,15 +72,15 @@ impl DataGen {
         // `is_moderated` tinyint(1) DEFAULT 0
         // `is_from_email` tinyint(1) DEFAULT 0
         // `hat_id` int
-        table.insert(vec![0.into(), self.gen_date(), self.gen_date(), "".into(), 0.into(), 2.into(), NULL, NULL, "First comment".into(), 3.into(), 0.into(), 0.0.into(), NULL, 0.into(), 0.into(), 0.into(), NULL])?;
-        table.insert(vec![1.into(), self.gen_date(), self.gen_date(), "".into(), 0.into(), 1.into(), NULL, NULL, "Second Comment".into(), 6.into(), 1.into(), 0.0.into(), NULL, 0.into(), 0.into(), 0.into(), NULL])?;
-        table.insert(vec![3.into(), self.gen_date(), self.gen_date(), "".into(), 0.into(), 0.into(), NULL, NULL, "Third Comment".into(), 10.into(), 3.into(), 0.0.into(), NULL, 0.into(), 0.into(), 0.into(), NULL])?;
-        table.insert(vec![4.into(), self.gen_date(), self.gen_date(), "".into(), 2.into(), 2.into(), NULL, NULL, "First comment".into(), 3.into(), 0.into(), 0.0.into(), NULL, 0.into(), 0.into(), 0.into(), NULL])?;
-        table.insert(vec![5.into(), self.gen_date(), self.gen_date(), "".into(), 2.into(), 0.into(), NULL, NULL, "Second Comment".into(), 6.into(), 1.into(), 0.0.into(), NULL, 0.into(), 0.into(), 0.into(), NULL])?;
-        table.insert(vec![6.into(), self.gen_date(), self.gen_date(), "".into(), 2.into(), 1.into(), NULL, NULL, "Third Comment".into(), 10.into(), 3.into(), 0.0.into(), NULL, 0.into(), 0.into(), 0.into(), NULL])?;
-        table.insert(vec![7.into(), self.gen_date(), self.gen_date(), "".into(), 1.into(), 0.into(), NULL, NULL, "First comment".into(), 3.into(), 0.into(), 0.0.into(), NULL, 0.into(), 0.into(), 0.into(), NULL])?;
-        table.insert(vec![8.into(), self.gen_date(), self.gen_date(), "".into(), 1.into(), 2.into(), NULL, NULL, "Second Comment".into(), 6.into(), 1.into(), 0.0.into(), NULL, 0.into(), 0.into(), 0.into(), NULL])?;
-        table.insert(vec![9.into(), self.gen_date(), self.gen_date(), "".into(), 1.into(), 2.into(), NULL, NULL, "Third Comment".into(), 10.into(), 3.into(), 0.0.into(), NULL, 0.into(), 0.into(), 0.into(), NULL])?;
+        // table.insert(vec![0.into(), self.gen_date(), self.gen_date(), "".into(), 0.into(), 2.into(), NULL, NULL, "First comment".into(), 3.into(), 0.into(), 0.0.into(), NULL, 0.into(), 0.into(), 0.into(), NULL])?;
+        // table.insert(vec![1.into(), self.gen_date(), self.gen_date(), "".into(), 0.into(), 1.into(), NULL, NULL, "Second Comment".into(), 6.into(), 1.into(), 0.0.into(), NULL, 0.into(), 0.into(), 0.into(), NULL])?;
+        // table.insert(vec![3.into(), self.gen_date(), self.gen_date(), "".into(), 0.into(), 0.into(), NULL, NULL, "Third Comment".into(), 10.into(), 3.into(), 0.0.into(), NULL, 0.into(), 0.into(), 0.into(), NULL])?;
+        // table.insert(vec![4.into(), self.gen_date(), self.gen_date(), "".into(), 2.into(), 2.into(), NULL, NULL, "First comment".into(), 3.into(), 0.into(), 0.0.into(), NULL, 0.into(), 0.into(), 0.into(), NULL])?;
+        // table.insert(vec![5.into(), self.gen_date(), self.gen_date(), "".into(), 2.into(), 0.into(), NULL, NULL, "Second Comment".into(), 6.into(), 1.into(), 0.0.into(), NULL, 0.into(), 0.into(), 0.into(), NULL])?;
+        // table.insert(vec![6.into(), self.gen_date(), self.gen_date(), "".into(), 2.into(), 1.into(), NULL, NULL, "Third Comment".into(), 10.into(), 3.into(), 0.0.into(), NULL, 0.into(), 0.into(), 0.into(), NULL])?;
+        // table.insert(vec![7.into(), self.gen_date(), self.gen_date(), "".into(), 1.into(), 0.into(), NULL, NULL, "First comment".into(), 3.into(), 0.into(), 0.0.into(), NULL, 0.into(), 0.into(), 0.into(), NULL])?;
+        // table.insert(vec![8.into(), self.gen_date(), self.gen_date(), "".into(), 1.into(), 2.into(), NULL, NULL, "Second Comment".into(), 6.into(), 1.into(), 0.0.into(), NULL, 0.into(), 0.into(), 0.into(), NULL])?;
+        // table.insert(vec![9.into(), self.gen_date(), self.gen_date(), "".into(), 1.into(), 2.into(), NULL, NULL, "Third Comment".into(), 10.into(), 3.into(), 0.0.into(), NULL, 0.into(), 0.into(), 0.into(), NULL])?;
 
 
 
@@ -216,9 +216,12 @@ type LoadRes = Result<(), failure::Error>;
 
 
 fn main() {
+    let mut a_it = std::env::args();
+    a_it.next().unwrap();
+    let func = a_it.next().unwrap();
     let mut ctrl = {
         let mut b = noria::Builder::default();
-        // b.log_with(noria::logger_pls());
+        //b.log_with(noria::logger_pls());
         b.start_simple().unwrap()
     };
 
@@ -270,11 +273,15 @@ fn main() {
         // ("main2", vec!["read_ribbons", "stories", "comments"])
         // ("main3", vec!["read_ribbons", "stories", "comments", "comments"])
         // ("main4", vec!["read_ribbons", "stories", "comments", "comments", "votes"])
-        ("main6", vec![])
+          //("main5", vec!["read_ribbons", "stories", "comments", "comments", "votes"])
+        // ("main7", vec![])
+    // ("main8", vec![])
+        (&func, vec![])
         ;
 
     ctrl.install_udtf(udf, &udf_input_tables).unwrap();
     println!("UDTF installed");
+
 
     {
         use std::io::Write;
