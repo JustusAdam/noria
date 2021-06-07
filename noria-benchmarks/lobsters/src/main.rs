@@ -18,6 +18,7 @@ use trawler::{LobstersRequest, UserId};
 const ORIGINAL_SCHEMA: &'static str = include_str!("../db-schema/original.sql");
 const NORIA_SCHEMA: &'static str = include_str!("../db-schema/noria.sql");
 const NATURAL_SCHEMA: &'static str = include_str!("../db-schema/natural.sql");
+const OHUA_SCHEMA: &'static str = include_str!("../db-schema/ohua.sql");
 
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
 enum Variant {
@@ -104,7 +105,7 @@ impl trawler::LobstersClient for MysqlTrawler {
                         Variant::Original => ORIGINAL_SCHEMA,
                         Variant::Noria => NORIA_SCHEMA,
                         Variant::Natural => NATURAL_SCHEMA,
-                        Variant::Ohua => NORIA_SCHEMA,
+                        Variant::Ohua => OHUA_SCHEMA,
                     };
                     futures::stream::iter_ok(schema.lines())
                         .fold((c, String::new()), move |(c, mut current_q), line| {

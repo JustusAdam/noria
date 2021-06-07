@@ -1,8 +1,8 @@
 use crate::node::{MirNode, MirNodeType};
 use column::Column;
 use query::MirQuery;
-use MirNodeRef;
 use std::collections::HashMap;
+use MirNodeRef;
 
 // <begin(graph-mods)>
 mod main_graph;
