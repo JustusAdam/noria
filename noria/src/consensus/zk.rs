@@ -5,8 +5,6 @@ use std::time::Duration;
 use failure::{Error, ResultExt};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use serde_json;
-use slog;
 use zookeeper::{Acl, CreateMode, KeeperState, Stat, WatchedEvent, Watcher, ZkError, ZooKeeper};
 
 use super::Authority;
@@ -207,7 +205,7 @@ mod tests {
     use std::time::Duration;
 
     #[test]
-    #[allow_fail]
+    #[ignore]
     fn it_works() {
         let authority =
             Arc::new(ZookeeperAuthority::new("127.0.0.1:2181/concensus_it_works").unwrap());

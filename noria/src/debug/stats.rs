@@ -38,6 +38,8 @@ pub struct NodeStats {
     pub mem_size: u64,
     /// The materialization type of this node's state.
     pub materialized: MaterializationStatus,
+    /// The value returned from Ingredient::probe.
+    pub probe_result: HashMap<String, String>,
 }
 
 /// Statistics about the Soup data-flow.

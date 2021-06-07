@@ -1,14 +1,18 @@
 [workspace]
 members = [
 	"noria",
-	"noria-server",
-	"noria-benchmarks",
-	"noria-benchmarks/lobsters",
+	"server",
+	"applications",
+	#"noria-benchmarks/lobsters",
 	"udf-benchmarks",
 ]
 
 [profile.release]
 debug=true
 
-[replace]
-'nom-sql:0.0.6' = { git = " https://github.com/JustusAdam/nom-sql", branch = "udfs" }
+[patch.crates-io]
+# https://github.com/tower-rs/tokio-tower/pull/6
+# optional -- just a perf optimization
+# comment this out if you want cargo doc to work!
+# tokio-tower = { git = "https://github.com/tower-rs/tokio-tower.git", branch = "no-box" }
+nom-sql = { git = " https://github.com/JustusAdam/nom-sql", branch = "udfs" }

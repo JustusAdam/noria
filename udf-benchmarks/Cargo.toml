@@ -6,7 +6,7 @@ edition = "2018"
 publish = false
 
 [dependencies]
-noria = { path = "../noria-server", package = "noria-server" }
+noria = { path = "../server", package = "noria-server" }
 nom-sql = "0.0.6"
 slog = "2.4.0"
 slog-term = "2.4.0"

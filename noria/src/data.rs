@@ -1,9 +1,10 @@
 use arccstr::ArcCStr;
 
-use chrono::{self, NaiveDateTime};
+use chrono::{self, NaiveDate, NaiveDateTime};
 
 use nom_sql::Literal;
 
+use std::convert::TryFrom;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::ops::{Add, Div, Mul, Sub};
@@ -24,10 +25,14 @@ const TINYTEXT_WIDTH: usize = 15;
 pub enum DataType {
     /// An empty value.
     None,
-    /// A 32-bit numeric value.
+    /// A signed 32-bit numeric value.
     Int(i32),
-    /// A 64-bit numeric value.
+    /// An unsigned 32-bit numeric value.
+    UnsignedInt(u32),
+    /// A signed 64-bit numeric value.
     BigInt(i64),
+    /// An unsigned signed 64-bit numeric value.
+    UnsignedBigInt(u64),
     /// A fixed point real value. The first field is the integer part, while the second is the
     /// fractional and must be between -999999999 and 999999999.
     Real(i64, i32),
@@ -40,16 +45,18 @@ pub enum DataType {
 }
 
 impl fmt::Display for DataType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
-            DataType::None => write!(f, "*"),
+            DataType::None => write!(f, "NULL"),
             DataType::Text(..) | DataType::TinyText(..) => {
-                let text: Cow<str> = self.into();
+                let text: &str = self.into();
                 // TODO: do we really want to produce quoted strings?
                 write!(f, "\"{}\"", text)
             }
             DataType::Int(n) => write!(f, "{}", n),
+            DataType::UnsignedInt(n) => write!(f, "{}", n),
             DataType::BigInt(n) => write!(f, "{}", n),
+            DataType::UnsignedBigInt(n) => write!(f, "{}", n),
             DataType::Real(i, frac) => {
                 if i == 0 && frac < 0 {
                     // We have to insert the negative sign ourselves.
@@ -64,21 +71,23 @@ impl fmt::Display for DataType {
 }
 
 impl fmt::Debug for DataType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             DataType::None => write!(f, "None"),
             DataType::Text(..) => {
-                let text: Cow<str> = self.into();
+                let text: &str = self.into();
                 write!(f, "Text({:?})", text)
             }
             DataType::TinyText(..) => {
-                let text: Cow<str> = self.into();
+                let text: &str = self.into();
                 write!(f, "TinyText({:?})", text)
             }
             DataType::Timestamp(ts) => write!(f, "Timestamp({:?})", ts),
             DataType::Real(..) => write!(f, "Real({})", self),
             DataType::Int(n) => write!(f, "Int({})", n),
+            DataType::UnsignedInt(n) => write!(f, "UnsignedInt({})", n),
             DataType::BigInt(n) => write!(f, "BigInt({})", n),
+            DataType::UnsignedBigInt(n) => write!(f, "UnsignedBigInt({})", n),
         }
     }
 }
@@ -156,16 +165,28 @@ impl PartialEq for DataType {
             (&DataType::TinyText(ref a), &DataType::TinyText(ref b)) => a == b,
             (&DataType::Text(..), &DataType::TinyText(..))
             | (&DataType::TinyText(..), &DataType::Text(..)) => {
-                let a: Cow<str> = self.into();
-                let b: Cow<str> = other.into();
+                let a: &str = self.into();
+                let b: &str = other.into();
                 a == b
             }
             (&DataType::BigInt(a), &DataType::BigInt(b)) => a == b,
+            (&DataType::UnsignedBigInt(a), &DataType::UnsignedBigInt(b)) => a == b,
             (&DataType::Int(a), &DataType::Int(b)) => a == b,
-            (&DataType::BigInt(..), &DataType::Int(..))
+            (&DataType::UnsignedInt(a), &DataType::UnsignedInt(b)) => a == b,
+            (&DataType::UnsignedBigInt(..), &DataType::Int(..))
+            | (&DataType::UnsignedBigInt(..), &DataType::UnsignedInt(..))
+            | (&DataType::UnsignedBigInt(..), &DataType::BigInt(..))
+            | (&DataType::UnsignedInt(..), &DataType::Int(..))
+            | (&DataType::UnsignedInt(..), &DataType::BigInt(..))
+            | (&DataType::UnsignedInt(..), &DataType::UnsignedBigInt(..))
+            | (&DataType::BigInt(..), &DataType::Int(..))
+            | (&DataType::BigInt(..), &DataType::UnsignedInt(..))
+            | (&DataType::BigInt(..), &DataType::UnsignedBigInt(..))
+            | (&DataType::Int(..), &DataType::UnsignedInt(..))
+            | (&DataType::Int(..), &DataType::UnsignedBigInt(..))
             | (&DataType::Int(..), &DataType::BigInt(..)) => {
-                let a: i64 = self.into();
-                let b: i64 = other.into();
+                let a: i128 = self.into();
+                let b: i128 = other.into();
                 a == b
             }
             (&DataType::Real(ai, af), &DataType::Real(bi, bf)) => ai == bi && af == bf,
@@ -191,16 +212,28 @@ impl Ord for DataType {
             (&DataType::TinyText(ref a), &DataType::TinyText(ref b)) => a.cmp(b),
             (&DataType::Text(..), &DataType::TinyText(..))
             | (&DataType::TinyText(..), &DataType::Text(..)) => {
-                let a: Cow<str> = self.into();
-                let b: Cow<str> = other.into();
+                let a: &str = self.into();
+                let b: &str = other.into();
                 a.cmp(&b)
             }
             (&DataType::BigInt(a), &DataType::BigInt(ref b)) => a.cmp(b),
+            (&DataType::UnsignedBigInt(a), &DataType::UnsignedBigInt(ref b)) => a.cmp(b),
             (&DataType::Int(a), &DataType::Int(b)) => a.cmp(&b),
+            (&DataType::UnsignedInt(a), &DataType::UnsignedInt(b)) => a.cmp(&b),
             (&DataType::BigInt(..), &DataType::Int(..))
-            | (&DataType::Int(..), &DataType::BigInt(..)) => {
-                let a: i64 = self.into();
-                let b: i64 = other.into();
+            | (&DataType::Int(..), &DataType::BigInt(..))
+            | (&DataType::BigInt(..), &DataType::UnsignedInt(..))
+            | (&DataType::UnsignedInt(..), &DataType::BigInt(..))
+            | (&DataType::BigInt(..), &DataType::UnsignedBigInt(..))
+            | (&DataType::UnsignedBigInt(..), &DataType::BigInt(..))
+            | (&DataType::UnsignedBigInt(..), &DataType::UnsignedInt(..))
+            | (&DataType::UnsignedInt(..), &DataType::UnsignedBigInt(..))
+            | (&DataType::Int(..), &DataType::UnsignedBigInt(..))
+            | (&DataType::UnsignedBigInt(..), &DataType::Int(..))
+            | (&DataType::UnsignedInt(..), &DataType::Int(..))
+            | (&DataType::Int(..), &DataType::UnsignedInt(..)) => {
+                let a: i128 = self.into();
+                let b: i128 = other.into();
                 a.cmp(&b)
             }
             (&DataType::Real(ai, af), &DataType::Real(ref bi, ref bf)) => {
@@ -210,7 +243,10 @@ impl Ord for DataType {
             (&DataType::None, &DataType::None) => Ordering::Equal,
 
             // order Ints, Reals, Text, Timestamps, None
-            (&DataType::Int(..), _) | (&DataType::BigInt(..), _) => Ordering::Greater,
+            (&DataType::Int(..), _)
+            | (&DataType::UnsignedInt(..), _)
+            | (&DataType::BigInt(..), _)
+            | (&DataType::UnsignedBigInt(..), _) => Ordering::Greater,
             (&DataType::Real(..), _) => Ordering::Greater,
             (&DataType::Text(..), _) | (&DataType::TinyText(..), _) => Ordering::Greater,
             (&DataType::Timestamp(..), _) => Ordering::Greater,
@@ -230,15 +266,41 @@ impl Hash for DataType {
                 let n: i64 = self.into();
                 n.hash(state)
             }
+            DataType::UnsignedInt(..) | DataType::UnsignedBigInt(..) => {
+                let n: u64 = self.into();
+                n.hash(state)
+            }
             DataType::Real(i, f) => {
                 i.hash(state);
                 f.hash(state);
             }
             DataType::Text(..) | DataType::TinyText(..) => {
-                let t: Cow<str> = self.into();
+                let t: &str = self.into();
                 t.hash(state)
             }
             DataType::Timestamp(ts) => ts.hash(state),
+        }
+    }
+}
+
+impl<T> From<Option<T>> for DataType
+where
+    DataType: From<T>,
+{
+    fn from(opt: Option<T>) -> Self {
+        match opt {
+            Some(t) => DataType::from(t),
+            None => DataType::None,
+        }
+    }
+}
+
+impl From<i128> for DataType {
+    fn from(s: i128) -> Self {
+        if s >= std::i64::MIN.into() && s <= std::i64::MAX.into() {
+            DataType::BigInt(s as i64)
+        } else {
+            panic!("can't fit {} in a DataType::BigInt", s)
         }
     }
 }
@@ -249,15 +311,33 @@ impl From<i64> for DataType {
     }
 }
 
+impl From<u64> for DataType {
+    fn from(s: u64) -> Self {
+        DataType::UnsignedBigInt(s)
+    }
+}
+
 impl From<i32> for DataType {
     fn from(s: i32) -> Self {
-        DataType::Int(s as i32)
+        DataType::Int(s)
+    }
+}
+
+impl From<u32> for DataType {
+    fn from(s: u32) -> Self {
+        DataType::UnsignedInt(s)
     }
 }
 
 impl From<usize> for DataType {
     fn from(s: usize) -> Self {
-        DataType::Int(s as i32)
+        DataType::UnsignedBigInt(s as u64)
+    }
+}
+
+impl From<f32> for DataType {
+    fn from(f: f32) -> Self {
+        Self::from(f as f64)
     }
 }
 
@@ -281,11 +361,17 @@ impl From<f64> for DataType {
     }
 }
 
+impl<'a> From<&'a DataType> for DataType {
+    fn from(dt: &'a DataType) -> Self {
+        dt.clone()
+    }
+}
+
 impl<'a> From<&'a Literal> for DataType {
     fn from(l: &'a Literal) -> Self {
         match *l {
             Literal::Null => DataType::None,
-            Literal::Integer(i) => i.into(),
+            Literal::Integer(i) => (i as i64).into(),
             Literal::String(ref s) => s.as_str().into(),
             Literal::CurrentTimestamp => {
                 let ts = chrono::Local::now().naive_local();
@@ -301,25 +387,24 @@ impl<'a> From<&'a Literal> for DataType {
 
 impl From<Literal> for DataType {
     fn from(l: Literal) -> Self {
-        match l {
-            Literal::Null => DataType::None,
-            Literal::Integer(i) => i.into(),
-            Literal::String(s) => s.as_str().into(),
-            Literal::CurrentTimestamp => {
-                let ts = chrono::Local::now().naive_local();
-                DataType::Timestamp(ts)
-            }
-            Literal::FixedPoint(r) => DataType::Real(i64::from(r.integral), r.fractional as i32),
-            _ => unimplemented!(),
-        }
+        (&l).into()
     }
 }
 
-use std::borrow::Cow;
-impl<'a> Into<Cow<'a, str>> for &'a DataType {
-    fn into(self) -> Cow<'a, str> {
-        match *self {
-            DataType::Text(ref s) => s.to_string_lossy(),
+impl From<NaiveDateTime> for DataType {
+    fn from(dt: NaiveDateTime) -> Self {
+        DataType::Timestamp(dt)
+    }
+}
+
+// This conversion has many unwraps, but all of them are expected to be safe,
+// because DataType variants (i.e. `Text` and `TinyText`) constructors are all
+// generated from valid UTF-8 strings, or the constructor fails (e.g. TryFrom &[u8]).
+// Thus, we can safely generate a &str from a DataType.
+impl<'a> From<&'a DataType> for &'a str {
+    fn from(data: &'a DataType) -> Self {
+        match *data {
+            DataType::Text(ref s) => s.to_str().unwrap(),
             DataType::TinyText(ref bts) => {
                 if bts[TINYTEXT_WIDTH - 1] == 0 {
                     // NULL terminated CStr
@@ -327,91 +412,177 @@ impl<'a> Into<Cow<'a, str>> for &'a DataType {
                     let null = bts.iter().position(|&i| i == 0).unwrap() + 1;
                     CStr::from_bytes_with_nul(&bts[0..null])
                         .unwrap()
-                        .to_string_lossy()
+                        .to_str()
+                        .unwrap()
                 } else {
                     // String is exactly eight bytes
-                    String::from_utf8_lossy(&bts[..])
+                    std::str::from_utf8(bts).unwrap()
                 }
             }
-            _ => unreachable!(),
+            _ => panic!("attempted to convert a {:?} to a string", data),
         }
     }
 }
 
-impl<'a> Into<String> for &'a DataType {
-    fn into(self) -> String {
-        let cow: Cow<str> = self.into();
-        cow.to_string()
+impl From<DataType> for i128 {
+    fn from(data: DataType) -> Self {
+        (&data).into()
     }
 }
 
-impl Into<String> for DataType {
-    fn into(self) -> String {
-        (&self).into()
+impl From<DataType> for i64 {
+    fn from(data: DataType) -> i64 {
+        (&data).into()
     }
 }
 
-impl Into<i64> for DataType {
-    fn into(self) -> i64 {
-        match self {
+impl From<&'_ DataType> for i128 {
+    fn from(data: &'_ DataType) -> Self {
+        match *data {
+            DataType::BigInt(s) => i128::from(s),
+            DataType::UnsignedBigInt(s) => i128::from(s),
+            DataType::Int(s) => i128::from(s),
+            DataType::UnsignedInt(s) => i128::from(s),
+            _ => panic!("attempted to convert a {:?} to an i128", data),
+        }
+    }
+}
+
+impl From<&'_ DataType> for i64 {
+    fn from(data: &'_ DataType) -> Self {
+        match *data {
             DataType::BigInt(s) => s,
             DataType::Int(s) => i64::from(s),
-            _ => unreachable!(),
+            DataType::UnsignedInt(s) => i64::from(s),
+            _ => panic!("attempted to convert a {:?} to an i64", data),
         }
     }
 }
 
-impl<'a> Into<i64> for &'a DataType {
-    fn into(self) -> i64 {
-        match *self {
-            DataType::BigInt(s) => s,
-            DataType::Int(s) => i64::from(s),
-            _ => unreachable!(),
+impl From<DataType> for u64 {
+    fn from(data: DataType) -> Self {
+        (&data).into()
+    }
+}
+
+impl From<&'_ DataType> for u64 {
+    fn from(data: &'_ DataType) -> Self {
+        match *data {
+            DataType::UnsignedBigInt(s) => s,
+            DataType::UnsignedInt(s) => u64::from(s),
+            _ => panic!("attempted to convert a {:?} to a u64", data),
         }
     }
 }
 
-impl Into<i32> for DataType {
-    fn into(self) -> i32 {
-        if let DataType::Int(s) = self {
+impl From<DataType> for i32 {
+    fn from(data: DataType) -> Self {
+        (&data).into()
+    }
+}
+
+impl From<&'_ DataType> for i32 {
+    fn from(data: &'_ DataType) -> Self {
+        if let DataType::Int(s) = *data {
             s
         } else {
-            unreachable!("{:?}", self);
+            panic!("attempted to convert a {:?} to a i32", data)
         }
     }
 }
 
-impl<'a> Into<f64> for &'a DataType {
-    fn into(self) -> f64 {
-        match *self {
+impl From<DataType> for u32 {
+    fn from(data: DataType) -> Self {
+        (&data).into()
+    }
+}
+
+impl From<&'_ DataType> for u32 {
+    fn from(data: &'_ DataType) -> Self {
+        if let DataType::UnsignedInt(s) = *data {
+            s
+        } else {
+            panic!("attempted to convert a {:?} to a u32", data)
+        }
+    }
+}
+
+impl From<DataType> for f64 {
+    fn from(data: DataType) -> Self {
+        (&data).into()
+    }
+}
+
+impl From<&'_ DataType> for f64 {
+    fn from(data: &'_ DataType) -> Self {
+        match *data {
             DataType::Real(i, f) => i as f64 + f64::from(f) / FLOAT_PRECISION,
             DataType::Int(i) => f64::from(i),
             DataType::BigInt(i) => i as f64,
-            _ => unreachable!(),
+            _ => panic!("attempted to convert a {:?} to an f64", data),
         }
     }
 }
 
 impl From<String> for DataType {
     fn from(s: String) -> Self {
-        let len = s.as_bytes().len();
-        if len <= TINYTEXT_WIDTH {
-            let mut bytes = [0; TINYTEXT_WIDTH];
-            if len != 0 {
-                let bts = &mut bytes[0..len];
-                bts.copy_from_slice(s.as_bytes());
-            }
-            DataType::TinyText(bytes)
-        } else {
-            use std::convert::TryFrom;
-            DataType::Text(ArcCStr::try_from(s).unwrap())
-        }
+        DataType::try_from(s.as_bytes()).unwrap()
     }
 }
 
 impl<'a> From<&'a str> for DataType {
     fn from(s: &'a str) -> Self {
-        DataType::from(s.to_owned())
+        DataType::try_from(s.as_bytes()).unwrap()
+    }
+}
+
+impl<'a> TryFrom<&'a [u8]> for DataType {
+    type Error = &'static str;
+
+    fn try_from(b: &[u8]) -> Result<Self, Self::Error> {
+        let len = b.len();
+        if len <= TINYTEXT_WIDTH {
+            let mut bytes = [0; TINYTEXT_WIDTH];
+            if len != 0 {
+                let bts = &mut bytes[0..len];
+                bts.copy_from_slice(b);
+            }
+
+            Ok(DataType::TinyText(bytes))
+        } else {
+            match ArcCStr::try_from(b) {
+                Ok(arc_c_str) => Ok(DataType::Text(arc_c_str)),
+                Err(_) => Err("Invalid utf-8 string"),
+            }
+        }
+    }
+}
+
+impl TryFrom<mysql_common::value::Value> for DataType {
+    type Error = &'static str;
+
+    fn try_from(v: mysql_common::value::Value) -> Result<Self, Self::Error> {
+        use mysql_common::value::Value;
+
+        match v {
+            Value::NULL => Ok(DataType::None),
+            Value::Bytes(v) => DataType::try_from(&v[..]),
+            Value::Int(v) => Ok(v.into()),
+            Value::UInt(v) => Ok(v.into()),
+            Value::Float(v) => Ok(v.into()),
+            Value::Double(v) => Ok(v.into()),
+            Value::Date(year, month, day, hour, minutes, seconds, micros) => {
+                Ok(DataType::Timestamp(
+                    NaiveDate::from_ymd(year.into(), month.into(), day.into()).and_hms_micro(
+                        hour.into(),
+                        minutes.into(),
+                        seconds.into(),
+                        micros.into(),
+                    ),
+                ))
+            }
+            Value::Time(..) => Err("`mysql_common::value::Value::time` is not supported in Noria"),
+        }
     }
 }
 
@@ -422,12 +593,27 @@ macro_rules! arithmetic_operation (
         match ($first, $second) {
             (&DataType::None, _) | (_, &DataType::None) => DataType::None,
             (&DataType::Int(a), &DataType::Int(b)) => (a $op b).into(),
+            (&DataType::UnsignedInt(a), &DataType::UnsignedInt(b)) => (a $op b).into(),
             (&DataType::BigInt(a), &DataType::BigInt(b)) => (a $op b).into(),
+            (&DataType::UnsignedBigInt(a), &DataType::UnsignedBigInt(b)) => (a $op b).into(),
+
             (&DataType::Int(a), &DataType::BigInt(b)) => (i64::from(a) $op b).into(),
             (&DataType::BigInt(a), &DataType::Int(b)) => (a $op i64::from(b)).into(),
+            (&DataType::Int(a), &DataType::UnsignedBigInt(b)) => (i128::from(a) $op i128::from(b)).into(),
+            (&DataType::UnsignedBigInt(a), &DataType::Int(b)) => (i128::from(a) $op i128::from(b)).into(),
+            (&DataType::BigInt(a), &DataType::UnsignedBigInt(b)) => (i128::from(a) $op i128::from(b)).into(),
+            (&DataType::UnsignedBigInt(a), &DataType::BigInt(b)) => (i128::from(a) $op i128::from(b)).into(),
+            (&DataType::UnsignedBigInt(a), &DataType::UnsignedInt(b)) => (a $op u64::from(b)).into(),
+            (&DataType::UnsignedInt(a), &DataType::UnsignedBigInt(b)) => (u64::from(a) $op b).into(),
 
             (first @ &DataType::Int(..), second @ &DataType::Real(..)) |
+            (first @ &DataType::BigInt(..), second @ &DataType::Real(..)) |
+            (first @ &DataType::UnsignedInt(..), second @ &DataType::Real(..)) |
+            (first @ &DataType::UnsignedBigInt(..), second @ &DataType::Real(..)) |
             (first @ &DataType::Real(..), second @ &DataType::Int(..)) |
+            (first @ &DataType::Real(..), second @ &DataType::BigInt(..)) |
+            (first @ &DataType::Real(..), second @ &DataType::UnsignedInt(..)) |
+            (first @ &DataType::Real(..), second @ &DataType::UnsignedBigInt(..)) |
             (first @ &DataType::Real(..), second @ &DataType::Real(..)) => {
                 let a: f64 = first.into();
                 let b: f64 = second.into();
@@ -497,6 +683,15 @@ pub enum Modification {
     None,
 }
 
+impl<T> From<T> for Modification
+where
+    T: Into<DataType>,
+{
+    fn from(t: T) -> Modification {
+        Modification::Set(t.into())
+    }
+}
+
 /// An operation to apply to a base table.
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum TableOperation {
@@ -541,12 +736,74 @@ impl From<Vec<DataType>> for TableOperation {
     }
 }
 
-/// Represents a set of records returned from a query.
-pub type Datas = Vec<Vec<DataType>>;
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mysql_value_to_datatype() {
+        use assert_approx_eq::assert_approx_eq;
+        use mysql_common::value::Value;
+
+        // Test Value::NULL.
+        let a = Value::NULL;
+        let a_dt = DataType::try_from(a);
+        assert!(a_dt.is_ok());
+        assert_eq!(a_dt.unwrap(), DataType::None);
+
+        // Test Value::Bytes.
+        // Can't build a CString with interior nul-terminated chars.
+        let a = Value::Bytes(vec![0; 30]);
+        let a_dt = DataType::try_from(a);
+        assert!(a_dt.is_err());
+
+        let a = Value::Bytes(vec![1; 30]);
+        let a_dt = DataType::try_from(a);
+        assert!(a_dt.is_ok());
+        assert_eq!(
+            a_dt.unwrap(),
+            DataType::Text(ArcCStr::try_from(&vec![1; 30][..]).unwrap())
+        );
+
+        let s = [1; 15];
+        let a = Value::Bytes(s.to_vec());
+        let a_dt = DataType::try_from(a);
+        assert!(a_dt.is_ok());
+        assert_eq!(a_dt.unwrap(), DataType::TinyText(s));
+
+        // Test Value::Int.
+        let a = Value::Int(-5);
+        let a_dt = DataType::try_from(a);
+        assert!(a_dt.is_ok());
+        assert_eq!(a_dt.unwrap(), DataType::BigInt(-5));
+
+        // Test Value::Float.
+        let a = Value::UInt(5);
+        let a_dt = DataType::try_from(a);
+        assert!(a_dt.is_ok());
+        assert_eq!(a_dt.unwrap(), DataType::UnsignedBigInt(5));
+
+        // Test Value::Float.
+        let initial_float: f32 = 4.2;
+        let a = Value::Float(initial_float);
+        let a_dt = DataType::try_from(a);
+        assert!(a_dt.is_ok());
+        let converted_float: f64 = a_dt.unwrap().into();
+        assert_approx_eq!(converted_float, initial_float as f64);
+
+        // Test Value::Date.
+        let ts = NaiveDate::from_ymd(1111, 1, 11).and_hms_micro(2, 3, 4, 5);
+        let a = Value::from(ts.clone());
+        let a_dt = DataType::try_from(a);
+        assert!(a_dt.is_ok());
+        assert_eq!(a_dt.unwrap(), DataType::Timestamp(ts));
+
+        // Test Value::Time.
+        // noria::DataType has no `Time` representation.
+        let a = Value::Time(true, 0, 0, 0, 0, 0);
+        let a_dt = DataType::try_from(a);
+        assert!(a_dt.is_err());
+    }
 
     #[test]
     fn real_to_string() {
@@ -672,12 +929,18 @@ mod tests {
         let shrt6 = DataType::Int(6);
         let long = DataType::BigInt(5);
         let long6 = DataType::BigInt(6);
+        let ushrt = DataType::UnsignedInt(5);
+        let ushrt6 = DataType::UnsignedInt(6);
+        let ulong = DataType::UnsignedBigInt(5);
+        let ulong6 = DataType::UnsignedBigInt(6);
 
         assert_eq!(txt1, txt1);
         assert_eq!(txt2, txt2);
         assert_eq!(text, text);
         assert_eq!(shrt, shrt);
         assert_eq!(long, long);
+        assert_eq!(ushrt, ushrt);
+        assert_eq!(ulong, ulong);
         assert_eq!(real, real);
         assert_eq!(time, time);
 
@@ -686,6 +949,16 @@ mod tests {
         assert_eq!(txt2, txt1);
         assert_eq!(shrt, long);
         assert_eq!(long, shrt);
+        assert_eq!(ushrt, shrt);
+        assert_eq!(shrt, ushrt);
+        assert_eq!(ulong, long);
+        assert_eq!(long, ulong);
+        assert_eq!(shrt, ulong);
+        assert_eq!(ulong, shrt);
+        assert_eq!(ushrt, long);
+        assert_eq!(long, ushrt);
+        assert_eq!(ushrt, ulong);
+        assert_eq!(ulong, ushrt);
 
         // negation
         assert_ne!(txt1, txt12);
@@ -694,6 +967,8 @@ mod tests {
         assert_ne!(txt1, time);
         assert_ne!(txt1, shrt);
         assert_ne!(txt1, long);
+        assert_ne!(txt1, ushrt);
+        assert_ne!(txt1, ulong);
 
         assert_ne!(txt2, txt12);
         assert_ne!(txt2, text);
@@ -701,6 +976,8 @@ mod tests {
         assert_ne!(txt2, time);
         assert_ne!(txt2, shrt);
         assert_ne!(txt2, long);
+        assert_ne!(txt2, ushrt);
+        assert_ne!(txt2, ulong);
 
         assert_ne!(text, text2);
         assert_ne!(text, txt1);
@@ -709,6 +986,8 @@ mod tests {
         assert_ne!(text, time);
         assert_ne!(text, shrt);
         assert_ne!(text, long);
+        assert_ne!(text, ushrt);
+        assert_ne!(text, ulong);
 
         assert_ne!(real, real2);
         assert_ne!(real, txt1);
@@ -717,6 +996,8 @@ mod tests {
         assert_ne!(real, time);
         assert_ne!(real, shrt);
         assert_ne!(real, long);
+        assert_ne!(real, ushrt);
+        assert_ne!(real, ulong);
 
         assert_ne!(time, time2);
         assert_ne!(time, txt1);
@@ -725,6 +1006,8 @@ mod tests {
         assert_ne!(time, real);
         assert_ne!(time, shrt);
         assert_ne!(time, long);
+        assert_ne!(time, ushrt);
+        assert_ne!(time, ulong);
 
         assert_ne!(shrt, shrt6);
         assert_ne!(shrt, txt1);
@@ -741,6 +1024,26 @@ mod tests {
         assert_ne!(long, real);
         assert_ne!(long, time);
         assert_ne!(long, shrt6);
+
+        assert_ne!(ushrt, ushrt6);
+        assert_ne!(ushrt, txt1);
+        assert_ne!(ushrt, txt2);
+        assert_ne!(ushrt, text);
+        assert_ne!(ushrt, real);
+        assert_ne!(ushrt, time);
+        assert_ne!(ushrt, ulong6);
+        assert_ne!(ushrt, shrt6);
+        assert_ne!(ushrt, long6);
+
+        assert_ne!(ulong, ulong6);
+        assert_ne!(ulong, txt1);
+        assert_ne!(ulong, txt2);
+        assert_ne!(ulong, text);
+        assert_ne!(ulong, real);
+        assert_ne!(ulong, time);
+        assert_ne!(ulong, ushrt6);
+        assert_ne!(ulong, shrt6);
+        assert_ne!(ulong, long6);
 
         use std::cmp::Ordering;
         assert_eq!(txt1.cmp(&txt1), Ordering::Equal);
