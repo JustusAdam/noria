@@ -2,7 +2,7 @@
 
 ns wut;
 
-use sf ohua::sql::query::filter;
+use sf ohua::sql::query::{group_by, count, filter };
 use sf ohua::lang::field;
 use sf ohua::lang::field::{is_deleted, user_id, story_id, is_moderated, is_following, upvotes, downvotes,comment_id,parent_comment_id,created_at,reason,updated_at};
 use sf ohua::lang::{eq, not, neq, and, geq,lt, or};
@@ -383,3 +383,55 @@ fn main8() -> Table<Result> {
         }
     }
 }
+
+#[ohua::noria_integration::make_udf]
+fn minus(a: i64, b: i64) -> i64 {
+    std::ops::Sub(a, b)
+}
+
+#[ohua::noria_integration::make_udf]
+fn another_or_cond(puid: i64, ruid: i64, psaldo: i64, suid: i64) -> i64 {
+    if or(and(std::cmp::PartialEq::eq(puid, ruid), std::cmp::Ord::geq(psaldo, 0)), std::cmp::PartialEq::eq(suid, ruid)) {
+        1
+    } else {
+        0
+    }
+}
+
+fn BOUNDARY_replying_comments_for_count() {
+
+    for ribbon in ohua::sql::table::read_ribbons.filter(|r| r.is_following) {
+
+        for story in ohua::sql::table::stories.filter(|s| eq(s.field::id, ribbon.story_id)) {
+
+            let c1 = ohua::sql::table::comments.filter(|c| eq(c.story_id, ribbon.story_id));
+            let c2 = c1.filter(|c| eq(c.user_id, ribbon.user_id));
+            let c3 = c2.filter(|c| not(or(c.is_deleted, c.is_moderated)));
+            for comment in c3.filter(|c| lt(ribbon.updated_at, c.created_at)) {
+
+                for parent in ohua::sql::table::parent_comments.filter(|p| eq(comment.parent_comment_id, p.field::id)) {
+
+                    let saldo = minus(comment.upvotes, comment.downvotes);
+                    let psaldo = minus(parent.upvotes, parent.downvotes);
+
+                    if another_or_cond(parent.user_id, ribbon.user_id, psaldo, story.user_id) {
+                        ( ribbon.user_id,
+                          ribbon.story_id,
+                          comment.field::id,
+                          saldo,
+                          psaldo
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// fn BOUNDARY_notifications(uid : i64) -> Result {
+//     let t = for (i, recs) in BOUNDARY_replying_comments_for_count().group_by(|r| r.user_id) {
+//         (x.user_id, count(recs))
+//     }
+
+//     t.get(uid)
+// }
