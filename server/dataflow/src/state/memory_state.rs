@@ -23,7 +23,7 @@ impl<T> Default for MemoryState<T> {
     }
 }
 
-pub(crate) type RowMemoryState = MemoryState<Vec<Row>>;
+pub(crate) type RowMemoryState = MemoryState<Rows>;
 
 impl<T> SizeOf for MemoryState<T> {
     fn size_of(&self) -> u64 {
@@ -41,7 +41,7 @@ impl<T> SizeOf for MemoryState<T> {
     }
 }
 
-impl<T:Send + Leaf + std::fmt::Debug> State for MemoryState<T> {
+impl<T:Send + Leaf> State for MemoryState<T> {
     fn add_key(&mut self, columns: &[usize], partial: Option<Vec<Tag>>) {
         let (i, exists) = if let Some(i) = self.state_for(columns) {
             // already keyed by this key; just adding tags
@@ -71,7 +71,7 @@ impl<T:Send + Leaf + std::fmt::Debug> State for MemoryState<T> {
             if !old.is_empty() {
                 assert!(!old[0].partial());
                 for rs in old[0].values() {
-                    for r in rs.row_slice() {
+                    for r in rs.as_rows() {
                         new.insert_row(Row::from(r.0.clone()));
                     }
                 }
@@ -157,7 +157,7 @@ impl<T:Send + Leaf + std::fmt::Debug> State for MemoryState<T> {
     fn cloned_records(&self) -> Vec<Vec<DataType>> {
         #[allow(clippy::ptr_arg)]
         fn fix<'a,T:Leaf>(rs: &'a T) -> impl Iterator<Item = Vec<DataType>> + 'a {
-            rs.row_slice().iter().map(|r| Vec::clone(&**r))
+            rs.as_rows().iter().map(|r| Vec::clone(&**r))
         }
 
         assert!(!self.state[0].partial());
@@ -239,15 +239,11 @@ impl<T: Leaf> MemoryState<T> {
     }
 
     pub fn lookup_leaf<'a>(&'a self, columns: &[usize], key: &KeyType) -> Option<&'a T>
-    where
-        T: std::fmt::Debug
     {
         let idx = self.state_for(columns).expect("Lookup on non-indexed column set");
         self.state[idx].lookup_leaf(key)
     }
     pub fn lookup_leaf_mut<'a>(&'a mut self, columns: &[usize], key: &KeyType) -> Option<&'a mut T>
-    where
-        T: std::fmt::Debug
     {
         let idx = self.state_for(columns).expect("Lookup on non-indexed column set");
         self.state[idx].lookup_leaf_mut(key)

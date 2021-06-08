@@ -32,14 +32,14 @@ impl<T: Leaf> KeyedState<T> {
         }
     }
 
-    pub(super) fn lookup_mut<'a>(&'a self, key: &KeyType) -> Option<&'a mut T> {
+    pub(super) fn lookup_mut<'a>(&'a mut self, key: &KeyType) -> Option<&'a mut T> {
         match (self, key) {
-            (&KeyedState::Single(ref m), &KeyType::Single(k)) => m.get_mut(k),
-            (&KeyedState::Double(ref m), &KeyType::Double(ref k)) => m.get_mut(k),
-            (&KeyedState::Tri(ref m), &KeyType::Tri(ref k)) => m.get_mut(k),
-            (&KeyedState::Quad(ref m), &KeyType::Quad(ref k)) => m.get_mut(k),
-            (&KeyedState::Quin(ref m), &KeyType::Quin(ref k)) => m.get_mut(k),
-            (&KeyedState::Sex(ref m), &KeyType::Sex(ref k)) => m.get_mut(k),
+            (KeyedState::Single(ref mut m), &KeyType::Single(k)) => m.get_mut(k),
+            (KeyedState::Double(ref mut m), &KeyType::Double(ref k)) => m.get_mut(k),
+            (KeyedState::Tri(ref mut m), &KeyType::Tri(ref k)) => m.get_mut(k),
+            (KeyedState::Quad(ref mut m), &KeyType::Quad(ref k)) => m.get_mut(k),
+            (KeyedState::Quin(ref mut m), &KeyType::Quin(ref k)) => m.get_mut(k),
+            (KeyedState::Sex(ref mut m), &KeyType::Sex(ref k)) => m.get_mut(k),
             _ => unreachable!(),
         }
     }
@@ -83,7 +83,7 @@ impl<T: Leaf> KeyedState<T> {
             }
         }?;
         Some((
-            rs.row_slice()
+            rs.as_rows()
                 .iter()
                 .filter(|r| Rc::strong_count(&r.0) == 1)
                 .map(SizeOf::deep_size_of)
@@ -113,13 +113,25 @@ impl<T: Leaf> KeyedState<T> {
             }
         }
         .map(|rows| {
-            rows.row_slice()
+            rows.as_rows()
                 .iter()
                 .filter(|r| Rc::strong_count(&r.0) == 1)
                 .map(SizeOf::deep_size_of)
                 .sum()
         })
         .unwrap_or(0)
+    }
+
+    pub(super) fn clear(&mut self) {
+        match self {
+            KeyedState::Single(ref mut m) => m.clear(),
+            KeyedState::Double(ref mut m) => m.clear(),
+            KeyedState::Tri(ref mut m) => m.clear(),
+            KeyedState::Quad(ref mut m) => m.clear(),
+            KeyedState::Quin(ref mut m) => m.clear(),
+            KeyedState::Sex(ref mut m) => m.clear(),
+            _ => unreachable!(),
+        }
     }
 }
 

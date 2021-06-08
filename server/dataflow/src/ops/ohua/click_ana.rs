@@ -1,12 +1,13 @@
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::HashMap;
+use slog::Logger;
 
 use super::att3::Typed;
 use nom_sql::SqlType;
 
 use crate::ops::grouped::get_group_values;
-use crate::state::click_ana::{iseq, ClickAnaState, Computer, I32Wrap};
+use crate::state::click_ana::{iseq, ClickAnaState, I32Wrap};
 //use crate::state::cstate::{MemoElem};
 use crate::prelude::*;
 
@@ -292,9 +293,10 @@ impl Ingredient for ClickAna {
         _: &mut dyn Executor,
         from: LocalNodeIndex,
         rs: Records,
-        replay_key_cols: &ReplayContext,
+        replay_key_cols: ReplayContext,
         _: &DomainNodes,
         state: &mut StateMap,
+        _: &Logger,
     ) -> RawProcessingResult {
         RawProcessingResult::Regular(self.on_input_mut(from, rs, &replay_key_cols.key(), state))
     }

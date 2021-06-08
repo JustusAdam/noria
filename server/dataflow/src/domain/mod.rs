@@ -1331,7 +1331,10 @@ impl Domain {
                                             &params,
                                         ))
                                     }
-                                    _ => Box::new(MemoryState::default()),
+                                    _ =>
+
+                                        n.make_special_state()
+                                        .unwrap_or_else(|| Box::new(RowMemoryState::default())),
                                 }
                             };
                             for idx in index {

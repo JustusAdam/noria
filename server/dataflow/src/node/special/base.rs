@@ -403,7 +403,7 @@ mod tests {
 
     #[test]
     fn lots_of_changes_in_same_batch() {
-        let state : MemoryState<Vec<Row>> = MemoryState::default();
+        let state : RowMemoryState = MemoryState::default();
         test_lots_of_changes_in_same_batch(Box::new(state));
     }
 

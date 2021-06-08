@@ -9,17 +9,27 @@ use super::keyed_state::*;
 use super::single_state::Leaf;
 //use super::mk_key::{ MakeKey, key_type_from_row };
 
-#[derive(Debug, Clone)]
+static mut EMPTY_ROWS : Option<Rows> = None;
+
+#[derive(Clone)]
 enum Memoization<T> {
     Empty,
-    Store(Row),
+    Store(Rows),
     Computing {
         computer: T,
         // Because, for the time being, I only expect to use this for grouping UDF's
         // this should only ever contain a single row.
-        memoization: Option<Row>,
+        memoization: Rows,
     },
 }
+
+fn singleton_rows(row: Row) -> Rows {
+    let mut b = Rows::default();
+    b.insert(row);
+    b
+}
+
+use Memoization::*;
 
 impl<T> Memoization<T> {
     fn value<'a>(&'a self) -> &'a Row {
@@ -28,9 +38,8 @@ impl<T> Memoization<T> {
 
     fn value_may<'a>(&'a self) -> Option<&'a Row> {
         match self {
-            Memoization::Empty => Option::None,
-            Memoization::Store(r) => Option::Some(&r),
-            Memoization::Computing { memoization, .. } => memoization.as_ref(),
+            Empty => Option::None,
+            Store(r) | Computing{ memoization: r, .. } => r.iter().next(),
         }
     }
 
@@ -42,47 +51,44 @@ impl<T> Memoization<T> {
     }
 
     fn iter<'a>(&'a self) -> impl Iterator<Item = &'a Row> {
-        match self {
-            Memoization::Empty => Option::None,
-            Memoization::Store(r) => Option::Some(r),
-            Memoization::Computing { memoization, .. } => memoization.as_ref(),
-        }
-        .into_iter()
+        self.value_may().into_iter()
     }
 
     fn replace_row(&mut self, item: Row) -> Option<Row> {
         match self {
-            Memoization::Empty => {
-                *self = Memoization::Store(item);
+            Empty => {
+                *self = Memoization::Store(singleton_rows(item));
                 Option::None
             }
-            Memoization::Store(ref mut e) => {
-                let mut o = Option::Some(item);
-                std::mem::swap(e, o.as_mut().unwrap());
-                o
+            Store(ref mut e)
+                | Computing{ memoization: ref mut e, .. } => {
+                let x = e.drain().next();
+                e.insert(item);
+                x.map(|e| e.0)
             }
-            Memoization::Computing {
-                ref mut memoization,
-                ..
-            } => std::mem::replace(memoization, Option::Some(item)),
         }
     }
 
     fn into_row(self) -> Option<Row> {
         match self {
-            Memoization::Empty => Option::None,
-            Memoization::Store(e) => Option::Some(e),
-            Memoization::Computing { memoization, .. } => memoization,
+            Empty => Option::None,
+            Store(e) | Computing { memoization: e, .. } => e.into_iter().next().map(|n| n.0),
+        }
+    }
+
+    fn into_rows(self) -> Rows {
+        match self {
+            Empty => Rows::default(),
+            Store(r) | Computing { memoization: r, .. } => r
         }
     }
 
     fn drop_row(&mut self) -> Option<Row> {
         match self {
-            Memoization::Computing {
-                ref mut memoization,
-                ..
-            } => std::mem::replace(memoization, Option::None),
-            _ => std::mem::replace(self, Memoization::Empty).into_row(),
+            Computing { memoization: ref mut e, .. }
+            | Store(ref mut e) =>
+                e.drain().next().map(|x| x.0),
+            _ => None
         }
     }
 }
@@ -102,7 +108,6 @@ impl<T> Index<usize> for Memoization<T> {
     }
 }
 
-#[derive(Debug)]
 pub(crate) struct MemoElem<T>(Memoization<T>);
 
 impl<T> MemoElem<T> {
@@ -111,7 +116,7 @@ impl<T> MemoElem<T> {
     }
 
     pub fn singleton_row(r: Row) -> MemoElem<T> {
-        MemoElem(Memoization::Store(r))
+        MemoElem(Memoization::Store(singleton_rows(r)))
     }
 
     pub fn value_may<'a>(&'a self) -> Option<&'a Row> {
@@ -127,17 +132,17 @@ impl<T> MemoElem<T> {
                 ref mut computer, ..
             } => computer,
             _ => {
-                let new = Memoization::Computing {
+                let new = unsafe { Memoization::Computing {
                     computer: Default::default(),
-                    memoization: Option::None,
-                };
+                    memoization: std::mem::uninitialized(),
+                } };
                 let old = std::mem::replace(&mut self.0, new);
                 if let Memoization::Computing {
                     ref mut computer,
                     ref mut memoization,
                 } = self.0
                 {
-                    std::mem::replace(memoization, old.into_row());
+                    std::mem::replace(memoization, old.into_rows());
                     computer
                 } else {
                     unreachable!()
@@ -161,6 +166,10 @@ impl<T: SizeOf> SizeOf for MemoElem<T> {
     fn deep_size_of(&self) -> u64 {
         self.0.deep_size_of()
     }
+
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
 }
 
 impl<T> Leaf for MemoElem<T> {
@@ -175,14 +184,10 @@ impl<T> Leaf for MemoElem<T> {
             Option::None
         }
     }
-    fn row_slice(&self) -> &[Row] {
+    fn as_rows(&self) -> &Rows {
         match self.0 {
-            Memoization::Store(ref memo)
-            | Memoization::Computing {
-                memoization: Option::Some(ref memo),
-                ..
-            } => std::slice::from_ref(memo),
-            _ => &[],
+            Memoization::Store(ref rows) | Memoization::Computing{memoization: ref rows,..} => rows,
+            _ => unsafe { EMPTY_ROWS.get_or_insert_with(|| Rows::default()) },
         }
     }
 }
@@ -198,6 +203,13 @@ impl<T: SizeOf> SizeOf for Memoization<T> {
 
     fn deep_size_of(&self) -> u64 {
         unimplemented!()
+    }
+    fn is_empty(&self) -> bool {
+        use Memoization::*;
+        match self {
+            Store(r) | Computing{memoization: r, ..} => r.is_empty(),
+            _ => true
+        }
     }
 }
 
@@ -216,6 +228,9 @@ impl<T: SizeOf> SizeOf for SpecialStateWrapper<T> {
 
     fn deep_size_of(&self) -> u64 {
         self.0.deep_size_of()
+    }
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 }
 

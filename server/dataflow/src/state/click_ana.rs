@@ -72,6 +72,9 @@ pub mod iseq {
             // TODO do a proper implementation here and find out if its even should have one
             self.size_of()
         }
+        fn is_empty(&self) -> bool {
+            self.0.is_empty()
+        }
     }
 
     impl SizeOf for Seq<I32Wrap> {
@@ -81,6 +84,10 @@ pub mod iseq {
         fn deep_size_of(&self) -> u64 {
             // TODO do a proper implementation here and find out if its even should have one
             self.size_of()
+        }
+
+        fn is_empty(&self) -> bool {
+            self.0.is_empty()
         }
     }
 

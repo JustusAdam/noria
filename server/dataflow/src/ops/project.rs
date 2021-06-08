@@ -583,7 +583,7 @@ mod tests {
 
     #[test]
     fn it_queries_trough_respecting_column_order() {
-        let state = box RowMemoryState::default();
+        let state = Box::new(RowMemoryState::default());
         let (p, states) = setup_query_through(state, &[0, 2, 1], None, None);
         let expected: Vec<DataType> = vec![1.into(), 3.into(), 2.into()];
         assert_query_through(p, 0, 1.into(), states, expected);

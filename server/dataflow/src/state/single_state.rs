@@ -18,11 +18,11 @@ macro_rules! insert_row_match_impl {
         let key = MakeKey::from_row(&$self.key, &*$r);
         match $map.entry(key) {
             Entry::Occupied(mut rs) => {
-                rs.get_mut().insert($r);
+                rs.get_mut().push($r);
             }
             Entry::Vacant(..) if $self.partial => return false,
             rs @ Entry::Vacant(..) => {
-                rs.or_default().insert($r);
+                rs.or_default().push($r);
             }
         }
     }};
@@ -41,7 +41,7 @@ macro_rules! remove_row_match_impl {
 pub(crate) trait Leaf : Default {
     fn push(&mut self, item: Row);
     fn remove(&mut self, row: &[DataType]) -> Option<Row>;
-    fn row_slice(&self) -> &[Row];
+    fn as_rows(&self) -> &Rows;
     fn singleton(item: Row) -> Self {
         let mut n = Self::default();
         n.push(item);
@@ -49,9 +49,9 @@ pub(crate) trait Leaf : Default {
     }
 }
 
-impl Leaf for Vec<Row> {
+impl Leaf for Rows {
     fn push(&mut self, item: Row) {
-        Vec::push(self,item)
+        self.insert(item);
     }
     fn remove(&mut self, r: &[DataType]) -> Option<Row> {
         if self.len() == 1 {
@@ -70,13 +70,19 @@ impl Leaf for Vec<Row> {
                     Some(row.clone())
                 }
             }
-        };
+        }
     }
-    fn row_slice(&self) -> &[Row] {
+    // fn row_slice(&self) -> &[Row] {
+    //     self
+    // }
+    fn as_rows(&self) -> &Rows {
         self
     }
-    fn singleton(item: Row) -> Self {
-        vec![item]
+}
+
+impl<T> SingleState<T> {
+    pub(super) fn is_empty(&self) -> bool {
+        self.rows == 0
     }
 }
 
@@ -103,9 +109,9 @@ impl<T: Leaf> SingleState<T> {
                 debug_assert_eq!(self.key.len(), 1);
                 // i *wish* we could use the entry API here, but it would mean an extra clone
                 // in the common case of an entry already existing for the given key...
-                if let Some(ref mut rs) = map.get_mut(&r[self.key[0]]) {
+                if let Some(rs) = map.get_mut(&r[self.key[0]]) {
                     self.rows += 1;
-                    rs.insert(r);
+                    rs.push(r);
                     return true;
                 } else if self.partial {
                     // trying to insert a record into partial materialization hole!
@@ -233,6 +239,7 @@ impl<T: Leaf> SingleState<T> {
         // mark_hole should only be called on keys we called mark_filled on
         removed
             .unwrap()
+            .as_rows()
             .iter()
             .filter(|r| Rc::strong_count(&r.0) == 1)
             .map(SizeOf::deep_size_of)
@@ -288,15 +295,10 @@ impl<T: Leaf> SingleState<T> {
     pub(super) fn rows(&self) -> usize {
         self.rows
     }
-    pub(super) fn is_empty(&self) -> bool {
-        self.rows == 0
-    }
     pub(super) fn lookup<'a>(&'a self, key: &KeyType) -> LookupResult<'a>
-    where
-        T: std::fmt::Debug
     {
         if let Some(rs) = self.state.lookup(key) {
-            LookupResult::Some(RecordResult::Borrowed(rs))
+            LookupResult::Some(RecordResult::Borrowed(rs.as_rows()))
         } else if self.partial() {
             // partially materialized, so this is a hole (empty results would be vec![])
             LookupResult::Missing
@@ -305,14 +307,10 @@ impl<T: Leaf> SingleState<T> {
         }
     }
     pub(super) fn lookup_leaf<'a>(&'a self, key: &KeyType) -> Option<&'a T>
-    where
-        T: std::fmt::Debug
     {
         self.state.lookup(key)
     }
     pub(super) fn lookup_leaf_mut<'a>(&'a mut self, key: &KeyType) -> Option<&'a mut T>
-    where
-        T: std::fmt::Debug
     {
         self.state.lookup_mut(key)
     }

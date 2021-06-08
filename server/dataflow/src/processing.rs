@@ -217,7 +217,7 @@ where
         executor: &mut dyn Executor,
         from: LocalNodeIndex,
         data: Records,
-        replay: &ReplayContext,
+        replay: ReplayContext,
         domain: &DomainNodes,
         states: &mut StateMap,
         logger: &Logger,

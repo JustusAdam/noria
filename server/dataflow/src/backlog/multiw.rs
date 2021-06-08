@@ -35,13 +35,13 @@ impl Handle {
     pub fn empty(&mut self, k: Key) {
         match *self {
             Handle::Single(ref mut h) => {
-                h.empty(key_to_single(k).into_owned());
+                h.remove_entry(key_to_single(k).into_owned());
             }
             Handle::Double(ref mut h) => {
-                h.empty(key_to_double(k).into_owned());
+                h.remove_entry(key_to_double(k).into_owned());
             }
             Handle::Many(ref mut h) => {
-                h.empty(k.into_owned());
+                h.remove_entry(k.into_owned());
             }
         }
     }
@@ -62,17 +62,18 @@ impl Handle {
     }
 
     pub fn refresh(&mut self) {
-        match *self {
-            Handle::Single(ref mut h) => {
-                h.refresh();
-            }
-            Handle::Double(ref mut h) => {
-                h.refresh();
-            }
-            Handle::Many(ref mut h) => {
-                h.refresh();
-            }
-        }
+        // ??????????????
+        // match *self {
+        //     Handle::Single(ref mut h) => {
+        //         h.refresh();
+        //     }
+        //     Handle::Double(ref mut h) => {
+        //         h.refresh();
+        //     }
+        //     Handle::Many(ref mut h) => {
+        //         h.refresh();
+        //     }
+        // }
     }
 
     pub fn meta_get_and<F, T>(&self, key: Key, then: F) -> Option<(Option<T>, i64)>
@@ -82,7 +83,7 @@ impl Handle {
         match *self {
             Handle::Single(ref h) => {
                 assert_eq!(key.len(), 1);
-                let map = h.read()?;
+                let map = h.enter()?;
                 let v = map.get(&key[0]).map(then);
                 let m = *map.meta();
                 Some((v, m))
@@ -111,14 +112,14 @@ impl Handle {
                         1,
                     );
                     let stack_key = mem::transmute::<_, &(DataType, DataType)>(&stack_key);
-                    let map = h.read()?;
+                    let map = h.enter()?;
                     let v = map.get(&stack_key).map(then);
                     let m = *map.meta();
                     Some((v, m))
                 }
             }
             Handle::Many(ref h) => {
-                let map = h.read()?;
+                let map = h.enter()?;
                 let v = map.get(&key[..]).map(then);
                 let m = *map.meta();
                 Some((v, m))
@@ -147,7 +148,7 @@ impl Handle {
                             // replay, which will produce an empty result. this will work, but is
                             // somewhat inefficient.
                             memory_delta -= r.deep_size_of() as isize;
-                            h.remove(r[key[0]].clone(), r);
+                            h.remove_value(r[key[0]].clone(), r);
                         }
                     }
                 }
@@ -163,7 +164,7 @@ impl Handle {
                         }
                         Record::Negative(r) => {
                             memory_delta -= r.deep_size_of() as isize;
-                            h.remove((r[key[0]].clone(), r[key[1]].clone()), r);
+                            h.remove_value((r[key[0]].clone(), r[key[1]].clone()), r);
                         }
                     }
                 }
@@ -179,7 +180,7 @@ impl Handle {
                         }
                         Record::Negative(r) => {
                             memory_delta -= r.deep_size_of() as isize;
-                            h.remove(key, r);
+                            h.remove_value(key, r);
                         }
                     }
                 }
