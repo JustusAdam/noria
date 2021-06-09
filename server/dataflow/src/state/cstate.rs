@@ -142,7 +142,7 @@ impl<T> MemoElem<T> {
                     ref mut memoization,
                 } = self.0
                 {
-                    std::mem::replace(memoization, old.into_rows());
+                    *memoization = old.into_rows();
                     computer
                 } else {
                     unreachable!()
