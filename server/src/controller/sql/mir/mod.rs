@@ -1261,11 +1261,11 @@ impl SqlToMirConverter {
                 MirNodeType::FilterAggregation {
                     on: over_col.clone(),
                     else_on: else_val.clone(),
-                    group_by: group_by.into_iter().cloned().collect(),
+                    group_by: mk_group_by(),
                     kind: filter_agg,
                     conditions: filter,
-                },
-            })
+                }
+            }),
         }
     }
 

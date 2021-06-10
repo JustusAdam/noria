@@ -5,10 +5,12 @@ extern crate rand;
 extern crate chrono;
 extern crate failure;
 
+extern crate tokio;
+
 use rand::prelude as rp;
 use rp::{Rng, SeedableRng};
 
-const SCHEMA : &'static str = include_str!("../../noria-benchmarks/lobsters/db-schema/noria.sql");
+const SCHEMA : &'static str = include_str!("../../applications/lobsters/noria/schema.sql");
 
 const SQL_Q : &'static str = include_str!("repl_comm.sql");
 
@@ -53,8 +55,8 @@ impl DataGen {
         noria::DataType::Timestamp(chrono::NaiveDateTime::from_timestamp(self.rng.gen_range(chrono::MIN_DATE.and_hms(0,0,0).timestamp(), chrono::MAX_DATE.and_hms(0,0,0).timestamp()) , 0))
     }
 
-    fn load_comments(&mut self, ctrl: &mut Handle) -> LoadRes {
-        let ref mut table = ctrl.table("comments")?.into_sync();
+    async fn load_comments(&mut self, ctrl: &mut Handle) -> LoadRes {
+        let ref mut table = ctrl.table("comments").await?;
         // `id` int unsigned NOT NULL PRIMARY KEY
         // `created_at` datetime NOT NULL
         // `updated_at` datetime
@@ -84,31 +86,31 @@ impl DataGen {
 
 
 
-        table.insert(vec![10.into(), self.gen_date(), self.gen_date(), "".into(), 5.into(), 6.into(), NULL, NULL, "First Comment".into(), 10.into(), 3.into(), 0.0.into(), NULL, 0.into(), 0.into(), 0.into(), NULL])?;
-        table.insert(vec![11.into(), self.gen_date(), self.gen_date(), "".into(), 5.into(), 6.into(), 10.into(), NULL, "Second Comment".into(), 10.into(), 3.into(), 0.0.into(), NULL, 0.into(), 0.into(), 0.into(), NULL])?;
+        table.insert(vec![10.into(), self.gen_date(), self.gen_date(), "".into(), 5.into(), 6.into(), NULL, NULL, "First Comment".into(), 10.into(), 3.into(), 0.0.into(), NULL, 0.into(), 0.into(), 0.into(), NULL]).await?;
+        table.insert(vec![11.into(), self.gen_date(), self.gen_date(), "".into(), 5.into(), 6.into(), 10.into(), NULL, "Second Comment".into(), 10.into(), 3.into(), 0.0.into(), NULL, 0.into(), 0.into(), 0.into(), NULL]).await?;
         Ok(())
     }
 
-    fn load_ribbons(&mut self, ctrl: &mut Handle) -> LoadRes {
-        let mut table = ctrl.table("read_ribbons")?.into_sync();
+    async fn load_ribbons(&mut self, ctrl: &mut Handle) -> LoadRes {
+        let mut table = ctrl.table("read_ribbons").await?;
         // `id` bigint NOT NULL PRIMARY KEY
         // `is_following` tinyint(1) DEFAULT 1
         // `created_at` datetime NOT NULL
         // `updated_at` datetime NOT NULL
         // `user_id` bigint
         // `story_id` bigint
-        table.insert(vec![0.into(), 1.into(), self.gen_date(), self.gen_date(), 0.into(), 2.into()])?;
-        table.insert(vec![1.into(), 1.into(), self.gen_date(), self.gen_date(), 1.into(), 1.into()])?;
-        table.insert(vec![2.into(), 1.into(), self.gen_date(), self.gen_date(), 2.into(), 0.into()])?;
+        table.insert(vec![0.into(), 1.into(), self.gen_date(), self.gen_date(), 0.into(), 2.into()]).await?;
+        table.insert(vec![1.into(), 1.into(), self.gen_date(), self.gen_date(), 1.into(), 1.into()]).await?;
+        table.insert(vec![2.into(), 1.into(), self.gen_date(), self.gen_date(), 2.into(), 0.into()]).await?;
 
-        table.insert(vec![5.into(), 1.into(), NULL, NULL, 5.into(), 5.into()])?;
-        table.insert(vec![6.into(), 1.into(), NULL, NULL, 6.into(), 5.into()])?;
+        table.insert(vec![5.into(), 1.into(), NULL, NULL, 5.into(), 5.into()]).await?;
+        table.insert(vec![6.into(), 1.into(), NULL, NULL, 6.into(), 5.into()]).await?;
 
         Ok(())
     }
 
-    fn load_stories(&mut self, ctrl: &mut Handle) -> LoadRes {
-        let mut table = ctrl.table("stories")?.into_sync();
+    async fn load_stories(&mut self, ctrl: &mut Handle) -> LoadRes {
+        let mut table = ctrl.table("stories").await?;
         // `id` int unsigned NOT NULL PRIMARY KEY
         // `created_at` datetime
         // `user_id` int unsigned
@@ -128,19 +130,19 @@ impl DataGen {
         // `unavailable_at` datetime
         // `twitter_id` varchar(20)
         // `user_is_author` tinyint(1) DEFAULT 0
-        table.insert(vec![0.into(), self.gen_date(), NULL, self.gen_str(20), "First Story".into(), NULL, "".into(), 0.into(), 10.into(), 0.into(), 0.into(), 0.0.into(), NULL, NULL, 0.into(), NULL, NULL, NULL, 0.into()])?;
-        table.insert(vec![1.into(), self.gen_date(), 1.into(), self.gen_str(20), "Second Story".into(), NULL, "".into(), 0.into(), 1.into(), 2.into(), 0.into(), 0.0.into(), NULL, NULL, 0.into(), NULL, NULL, NULL, 1.into()])?;
-        table.insert(vec![2.into(), self.gen_date(), 2.into(), self.gen_str(20), "Third Story".into(), NULL, "".into(), 0.into(), 1.into(), 2.into(), 0.into(), 0.0.into(), NULL, NULL, 0.into(), NULL, NULL, NULL, 0.into()])?;
+        table.insert(vec![0.into(), self.gen_date(), NULL, self.gen_str(20), "First Story".into(), NULL, "".into(), 0.into(), 10.into(), 0.into(), 0.into(), 0.0.into(), NULL, NULL, 0.into(), NULL, NULL, NULL, 0.into()]).await?;
+        table.insert(vec![1.into(), self.gen_date(), 1.into(), self.gen_str(20), "Second Story".into(), NULL, "".into(), 0.into(), 1.into(), 2.into(), 0.into(), 0.0.into(), NULL, NULL, 0.into(), NULL, NULL, NULL, 1.into()]).await?;
+        table.insert(vec![2.into(), self.gen_date(), 2.into(), self.gen_str(20), "Third Story".into(), NULL, "".into(), 0.into(), 1.into(), 2.into(), 0.into(), 0.0.into(), NULL, NULL, 0.into(), NULL, NULL, NULL, 0.into()]).await?;
 
 
 
-        table.insert(vec![5.into(), self.gen_date(), 5.into(), self.gen_str(20), "Fourth Story".into(), NULL, "".into(), 0.into(), 10.into(), 2.into(), 0.into(), 0.0.into(), NULL, NULL, 0.into(), NULL, NULL, NULL, 0.into()])?;
-        table.insert(vec![6.into(), self.gen_date(), 6.into(), self.gen_str(20), "Fifth Story".into(), NULL, "".into(), 0.into(), 10.into(), 2.into(), 0.into(), 0.0.into(), NULL, NULL, 0.into(), NULL, NULL, NULL, 0.into()])?;
+        table.insert(vec![5.into(), self.gen_date(), 5.into(), self.gen_str(20), "Fourth Story".into(), NULL, "".into(), 0.into(), 10.into(), 2.into(), 0.into(), 0.0.into(), NULL, NULL, 0.into(), NULL, NULL, NULL, 0.into()]).await?;
+        table.insert(vec![6.into(), self.gen_date(), 6.into(), self.gen_str(20), "Fifth Story".into(), NULL, "".into(), 0.into(), 10.into(), 2.into(), 0.into(), 0.0.into(), NULL, NULL, 0.into(), NULL, NULL, NULL, 0.into()]).await?;
         Ok(())
     }
 
-    fn load_users(&mut self, ctrl: &mut Handle) -> LoadRes {
-        let mut table = ctrl.table("users")?.into_sync();
+    async fn load_users(&mut self, ctrl: &mut Handle) -> LoadRes {
+        let mut table = ctrl.table("users").await?;
         // `id` int unsigned NOT NULL PRIMARY KEY
         // `username` varchar(50)
         // `email` varchar(100)
@@ -165,64 +167,67 @@ impl DataGen {
         // `disabled_invite_by_user_id` int
         // `disabled_invite_reason` varchar(200)
         // `settings` text
-        table.insert(vec![0.into(), "first".into(), NULL, NULL, self.gen_date(), 1.into(), NULL, "".into(), NULL, NULL, 1.into(), 0.into(), NULL, NULL, 0.into(), 10.into(), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL])?;
-        table.insert(vec![1.into(), "second".into(), NULL, NULL, self.gen_date(), 0.into(), NULL, "".into(), NULL, NULL, 0.into(), 0.into(), NULL, NULL, 0.into(), 10.into(), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL])?;
-        table.insert(vec![2.into(), "third".into(), NULL, NULL, self.gen_date(), 0.into(), NULL, "".into(), NULL, NULL, 0.into(), 0.into(), NULL, NULL, 0.into(), 10.into(), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL])?;
+        table.insert(vec![0.into(), "first".into(), NULL, NULL, self.gen_date(), 1.into(), NULL, "".into(), NULL, NULL, 1.into(), 0.into(), NULL, NULL, 0.into(), 10.into(), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL]).await?;
+        table.insert(vec![1.into(), "second".into(), NULL, NULL, self.gen_date(), 0.into(), NULL, "".into(), NULL, NULL, 0.into(), 0.into(), NULL, NULL, 0.into(), 10.into(), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL]).await?;
+        table.insert(vec![2.into(), "third".into(), NULL, NULL, self.gen_date(), 0.into(), NULL, "".into(), NULL, NULL, 0.into(), 0.into(), NULL, NULL, 0.into(), 10.into(), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL]).await?;
 
-        table.insert(vec![5.into(), "fourth".into(), NULL, NULL, self.gen_date(), 0.into(), NULL, "".into(), NULL, NULL, 0.into(), 0.into(), NULL, NULL, 0.into(), 10.into(), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL])?;
-        table.insert(vec![6.into(), "fifth".into(), NULL, NULL, self.gen_date(), 0.into(), NULL, "".into(), NULL, NULL, 0.into(), 0.into(), NULL, NULL, 0.into(), 10.into(), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL])?;
+        table.insert(vec![5.into(), "fourth".into(), NULL, NULL, self.gen_date(), 0.into(), NULL, "".into(), NULL, NULL, 0.into(), 0.into(), NULL, NULL, 0.into(), 10.into(), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL]).await?;
+        table.insert(vec![6.into(), "fifth".into(), NULL, NULL, self.gen_date(), 0.into(), NULL, "".into(), NULL, NULL, 0.into(), 0.into(), NULL, NULL, 0.into(), 10.into(), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL]).await?;
         Ok(())
     }
 
-    fn load_votes(&mut self, ctrl: &mut Handle) -> LoadRes {
-        let mut table = ctrl.table("votes")?.into_sync();
+    async fn load_votes(&mut self, ctrl: &mut Handle) -> LoadRes {
+        let mut table = ctrl.table("votes").await?;
         // `id` bigint unsigned NOT NULL PRIMARY KEY
         // `user_id` int unsigned NOT NULL
         // `story_id` int unsigned NOT NULL
         // `comment_id` int unsigned
         // `vote` tinyint NOT NULL
         // `reason` varchar(1)
-        table.insert(vec![0.into(), 0.into(), 0.into(), 0.into(), 1.into(), NULL])?;
-        table.insert(vec![1.into(), 1.into(), 0.into(), 1.into(), 0.into(), NULL])?;
-        table.insert(vec![2.into(), 2.into(), 0.into(), 2.into(), 1.into(), NULL])?;
-        table.insert(vec![3.into(), 0.into(), 1.into(), 1.into(), 0.into(), NULL])?;
-        table.insert(vec![4.into(), 2.into(), 1.into(), 0.into(), 1.into(), NULL])?;
-        table.insert(vec![5.into(), 1.into(), 1.into(), 2.into(), 0.into(), NULL])?;
-        table.insert(vec![6.into(), 1.into(), 2.into(), 1.into(), 1.into(), NULL])?;
-        table.insert(vec![7.into(), 0.into(), 2.into(), 1.into(), 0.into(), NULL])?;
-        table.insert(vec![8.into(), 2.into(), 2.into(), 2.into(), 1.into(), NULL])?;
+        table.insert(vec![0.into(), 0.into(), 0.into(), 0.into(), 1.into(), NULL]).await?;
+        table.insert(vec![1.into(), 1.into(), 0.into(), 1.into(), 0.into(), NULL]).await?;
+        table.insert(vec![2.into(), 2.into(), 0.into(), 2.into(), 1.into(), NULL]).await?;
+        table.insert(vec![3.into(), 0.into(), 1.into(), 1.into(), 0.into(), NULL]).await?;
+        table.insert(vec![4.into(), 2.into(), 1.into(), 0.into(), 1.into(), NULL]).await?;
+        table.insert(vec![5.into(), 1.into(), 1.into(), 2.into(), 0.into(), NULL]).await?;
+        table.insert(vec![6.into(), 1.into(), 2.into(), 1.into(), 1.into(), NULL]).await?;
+        table.insert(vec![7.into(), 0.into(), 2.into(), 1.into(), 0.into(), NULL]).await?;
+        table.insert(vec![8.into(), 2.into(), 2.into(), 2.into(), 1.into(), NULL]).await?;
 
-        table.insert(vec![9.into(), 5.into(), 2.into(), 11.into(), 1.into(), NULL])?;
-        table.insert(vec![10.into(), 6.into(), 2.into(), 11.into(), 1.into(), NULL])?;
-        table.insert(vec![11.into(), 5.into(), 5.into(), 11.into(), 1.into(), NULL])?;
-        table.insert(vec![12.into(), 6.into(), 6.into(), 11.into(), 1.into(), NULL])?;
+        table.insert(vec![9.into(), 5.into(), 2.into(), 11.into(), 1.into(), NULL]).await?;
+        table.insert(vec![10.into(), 6.into(), 2.into(), 11.into(), 1.into(), NULL]).await?;
+        table.insert(vec![11.into(), 5.into(), 5.into(), 11.into(), 1.into(), NULL]).await?;
+        table.insert(vec![12.into(), 6.into(), 6.into(), 11.into(), 1.into(), NULL]).await?;
         Ok(())
     }
 
-    fn load_data(&mut self, ctrl: &mut Handle) -> LoadRes {
-        self.load_users(ctrl)?;
-        self.load_stories(ctrl)?;
-        self.load_comments(ctrl)?;
-        self.load_ribbons(ctrl)?;
-        self.load_votes(ctrl)?;
+    async fn load_data(&mut self, ctrl: &mut Handle) -> LoadRes {
+        self.load_users(ctrl).await?;
+        self.load_stories(ctrl).await?;
+        self.load_comments(ctrl).await?;
+        self.load_ribbons(ctrl).await?;
+        self.load_votes(ctrl).await?;
         Ok(())
 
     }
 }
 
-type Handle = noria::SyncHandle<noria::LocalAuthority>;
+type Handle = noria::Handle<noria::LocalAuthority>;
 type LoadRes = Result<(), failure::Error>;
 
 
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let mut a_it = std::env::args();
     a_it.next().unwrap();
     let func = a_it.next().unwrap();
-    let mut ctrl = {
+    let mut ctrl : Handle = {
         let mut b = noria::Builder::default();
         //b.log_with(noria::logger_pls());
-        b.start_simple().unwrap()
+        let (h, done) = b.start_local().await.unwrap();
+        done.await;
+        h
     };
 
     let mut current_q = String::new();
@@ -241,7 +246,7 @@ fn main() {
             println!("Handling {} {} query", w1, w2);
             if w1 != "DROP" && w1 != "INSERT" // skipping these for now. Figure out correct handling later
             {
-                let ar = ctrl.extend_recipe(&current_q).unwrap();
+                let ar = ctrl.extend_recipe(&current_q).await.unwrap();
                 println!("Installed tables: {:?}", ar.new_nodes.keys().collect::<Vec<_>>())
             }
             // if w1 == "CREATE" && w2 == "TABLE" {
@@ -262,10 +267,10 @@ fn main() {
         }
     }
 
-    ctrl.extend_recipe(SQL_Q).unwrap();
+    ctrl.extend_recipe(SQL_Q).await.unwrap();
     println!("Query installed");
 
-    DataGen::new().load_data(&mut ctrl).unwrap();
+    DataGen::new().load_data(&mut ctrl).await.unwrap();
     let (udf, udf_input_tables) =
         // ("main", vec!["read_ribbons", "stories", "comments", "comments", "votes"])
         // ("main0", vec!["read_ribbons"])
@@ -279,21 +284,21 @@ fn main() {
         (&func, vec![])
         ;
 
-    ctrl.install_udtf(udf, &udf_input_tables).unwrap();
+    ctrl.install_udtf(udf, &udf_input_tables).await.unwrap();
     println!("UDTF installed");
 
 
     {
         use std::io::Write;
-        let gr = ctrl.graphviz();
+        let gr = ctrl.graphviz().await;
         write!(std::fs::File::create("graph.dot").unwrap(), "{}", gr.unwrap()).unwrap();
     }
     {
-        let mut view = ctrl.view(udf).expect("UDTF not found").into_sync();
+        let mut view = ctrl.view(udf).await.expect("UDTF not found");
         // let cols = view.columns();
 
-        for mut r in view.lookup(&vec![0.into()], true).unwrap().drain(..) {
-            println!("{:?}", r.drain(..).zip(view.columns().iter()).collect::<Vec<_>>());
+        for r in view.lookup(&vec![0.into()], true).await.unwrap().into_iter() {
+            println!("{:?}", r.into_iter().zip(view.columns().iter()).collect::<Vec<_>>());
         }
     }
     // Currently does not work. Is it the nested selects?

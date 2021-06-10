@@ -1059,7 +1059,7 @@ impl ControllerInner {
             let mut opt_mir = q.optimize(table_mapping, sec);
             debug!(log, "MIR optimized, creating flow parts");
             let _ = // what should I do with this result?
-                super::mir_to_flow::mir_query_to_flow_parts(&mut opt_mir, mig, table_mapping);
+                super::mir_to_flow::mir_query_to_flow_parts(&mut opt_mir.0, mig, table_mapping);
             debug!(log, "Finished creating migration, committing");
             Ok(())
         })?;

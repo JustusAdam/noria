@@ -386,12 +386,12 @@ fn main8() -> Table<Result> {
 
 #[ohua::noria_integration::make_udf]
 fn minus(a: i64, b: i64) -> i64 {
-    std::ops::Sub(a, b)
+    std::ops::Sub::sub(a, b)
 }
 
 #[ohua::noria_integration::make_udf]
 fn another_or_cond(puid: i64, ruid: i64, psaldo: i64, suid: i64) -> i64 {
-    if or(and(std::cmp::PartialEq::eq(puid, ruid), std::cmp::Ord::geq(psaldo, 0)), std::cmp::PartialEq::eq(suid, ruid)) {
+    if ((puid == ruid) && (psaldo >= 0)) || (suid == ruid) {
         1
     } else {
         0

@@ -15,4 +15,4 @@ debug=true
 # optional -- just a perf optimization
 # comment this out if you want cargo doc to work!
 # tokio-tower = { git = "https://github.com/tower-rs/tokio-tower.git", branch = "no-box" }
-nom-sql = { git = " https://github.com/JustusAdam/nom-sql", branch = "udfs" }
+nom-sql = {path = "../nom-sql" } # { git = "https://github.com/JustusAdam/nom-sql", ref = "2ec0c30" }

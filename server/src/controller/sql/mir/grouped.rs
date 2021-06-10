@@ -32,7 +32,7 @@ fn target_columns_from_computed_column(computed_col: &nom_sql::Column) -> Vec<Co
             }),
             _,
         )
-        | Sum(FunctionArguments::Column(ref col), _) => Column::from(col),
+        | Sum(FunctionArguments::Column(ref col), _) => vec![ Column::from(col) ],
         UDF(_,ref cols) => {
             cols.iter().map(Column::from).collect()
         },
