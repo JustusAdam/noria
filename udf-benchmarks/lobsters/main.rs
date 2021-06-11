@@ -10,7 +10,7 @@ extern crate tokio;
 use rand::prelude as rp;
 use rp::{Rng, SeedableRng};
 
-const SCHEMA : &'static str = include_str!("../../applications/lobsters/noria/schema.sql");
+const SCHEMA : &'static str = include_str!("tables.sql");
 
 const SQL_Q : &'static str = include_str!("repl_comm.sql");
 
@@ -66,28 +66,16 @@ impl DataGen {
         // `parent_comment_id` int unsigned
         // `thread_id` int unsigned
         // `comment` mediumtext NOT NULL
-        // `upvotes` int DEFAULT 0 NOT NULL
-        // `downvotes` int DEFAULT 0 NOT NULL
-        // `confidence` decimal(20,19) DEFAULT '0.0' NOT NULL
         // `markeddown_comment` mediumtext
         // `is_deleted` tinyint(1) DEFAULT 0
         // `is_moderated` tinyint(1) DEFAULT 0
         // `is_from_email` tinyint(1) DEFAULT 0
         // `hat_id` int
-        // table.insert(vec![0.into(), self.gen_date(), self.gen_date(), "".into(), 0.into(), 2.into(), NULL, NULL, "First comment".into(), 3.into(), 0.into(), 0.0.into(), NULL, 0.into(), 0.into(), 0.into(), NULL])?;
-        // table.insert(vec![1.into(), self.gen_date(), self.gen_date(), "".into(), 0.into(), 1.into(), NULL, NULL, "Second Comment".into(), 6.into(), 1.into(), 0.0.into(), NULL, 0.into(), 0.into(), 0.into(), NULL])?;
-        // table.insert(vec![3.into(), self.gen_date(), self.gen_date(), "".into(), 0.into(), 0.into(), NULL, NULL, "Third Comment".into(), 10.into(), 3.into(), 0.0.into(), NULL, 0.into(), 0.into(), 0.into(), NULL])?;
-        // table.insert(vec![4.into(), self.gen_date(), self.gen_date(), "".into(), 2.into(), 2.into(), NULL, NULL, "First comment".into(), 3.into(), 0.into(), 0.0.into(), NULL, 0.into(), 0.into(), 0.into(), NULL])?;
-        // table.insert(vec![5.into(), self.gen_date(), self.gen_date(), "".into(), 2.into(), 0.into(), NULL, NULL, "Second Comment".into(), 6.into(), 1.into(), 0.0.into(), NULL, 0.into(), 0.into(), 0.into(), NULL])?;
-        // table.insert(vec![6.into(), self.gen_date(), self.gen_date(), "".into(), 2.into(), 1.into(), NULL, NULL, "Third Comment".into(), 10.into(), 3.into(), 0.0.into(), NULL, 0.into(), 0.into(), 0.into(), NULL])?;
-        // table.insert(vec![7.into(), self.gen_date(), self.gen_date(), "".into(), 1.into(), 0.into(), NULL, NULL, "First comment".into(), 3.into(), 0.into(), 0.0.into(), NULL, 0.into(), 0.into(), 0.into(), NULL])?;
-        // table.insert(vec![8.into(), self.gen_date(), self.gen_date(), "".into(), 1.into(), 2.into(), NULL, NULL, "Second Comment".into(), 6.into(), 1.into(), 0.0.into(), NULL, 0.into(), 0.into(), 0.into(), NULL])?;
-        // table.insert(vec![9.into(), self.gen_date(), self.gen_date(), "".into(), 1.into(), 2.into(), NULL, NULL, "Third Comment".into(), 10.into(), 3.into(), 0.0.into(), NULL, 0.into(), 0.into(), 0.into(), NULL])?;
 
 
 
-        table.insert(vec![10.into(), self.gen_date(), self.gen_date(), "".into(), 5.into(), 6.into(), NULL, NULL, "First Comment".into(), 10.into(), 3.into(), 0.0.into(), NULL, 0.into(), 0.into(), 0.into(), NULL]).await?;
-        table.insert(vec![11.into(), self.gen_date(), self.gen_date(), "".into(), 5.into(), 6.into(), 10.into(), NULL, "Second Comment".into(), 10.into(), 3.into(), 0.0.into(), NULL, 0.into(), 0.into(), 0.into(), NULL]).await?;
+        table.insert(vec![10.into(), self.gen_date(), self.gen_date(), "".into(), 5.into(), 6.into(), NULL, NULL, "First Comment".into(), NULL, 0.into(), 0.into(), 0.into(), NULL]).await?;
+        table.insert(vec![11.into(), self.gen_date(), self.gen_date(), "".into(), 5.into(), 6.into(), 10.into(), NULL, "Second Comment".into(), NULL, 0.into(), 0.into(), 0.into(), NULL]).await?;
         Ok(())
     }
 
@@ -111,33 +99,117 @@ impl DataGen {
 
     async fn load_stories(&mut self, ctrl: &mut Handle) -> LoadRes {
         let mut table = ctrl.table("stories").await?;
-        // `id` int unsigned NOT NULL PRIMARY KEY
-        // `created_at` datetime
-        // `user_id` int unsigned
-        // `url` varchar(250) DEFAULT ''
-        // `title` varchar(150) DEFAULT '' NOT NULL
-        // `description` mediumtext
-        // `short_id` varchar(6) DEFAULT '' NOT NULL
-        // `is_expired` tinyint(1) DEFAULT 0 NOT NULL
-        // `upvotes` int unsigned DEFAULT 0 NOT NULL
-        // `downvotes` int unsigned DEFAULT 0 NOT NULL
-        // `is_moderated` tinyint(1) DEFAULT 0 NOT NULL
-        // `hotness` decimal(20,10) DEFAULT '0.0' NOT NULL
-        // `markeddown_description` mediumtext
-        // `story_cache` mediumtext
-        // `comments_count` int DEFAULT 0 NOT NULL
-        // `merged_story_id` int
-        // `unavailable_at` datetime
-        // `twitter_id` varchar(20)
-        // `user_is_author` tinyint(1) DEFAULT 0
-        table.insert(vec![0.into(), self.gen_date(), NULL, self.gen_str(20), "First Story".into(), NULL, "".into(), 0.into(), 10.into(), 0.into(), 0.into(), 0.0.into(), NULL, NULL, 0.into(), NULL, NULL, NULL, 0.into()]).await?;
-        table.insert(vec![1.into(), self.gen_date(), 1.into(), self.gen_str(20), "Second Story".into(), NULL, "".into(), 0.into(), 1.into(), 2.into(), 0.into(), 0.0.into(), NULL, NULL, 0.into(), NULL, NULL, NULL, 1.into()]).await?;
-        table.insert(vec![2.into(), self.gen_date(), 2.into(), self.gen_str(20), "Third Story".into(), NULL, "".into(), 0.into(), 1.into(), 2.into(), 0.into(), 0.0.into(), NULL, NULL, 0.into(), NULL, NULL, NULL, 0.into()]).await?;
+        // `id` int unsigned NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        // `always_null` int,
+        // `created_at` datetime,
+        // `user_id` int unsigned,
+        // `url` varchar(250) DEFAULT '',
+        // `title` varchar(150) DEFAULT '' NOT NULL,
+        // `description` mediumtext,
+        // `short_id` varchar(6) DEFAULT '' NOT NULL,
+        // `is_expired` tinyint(1) DEFAULT 0 NOT NULL,
+        // `is_moderated` tinyint(1) DEFAULT 0 NOT NULL,
+        // `markeddown_description` mediumtext,
+        // `story_cache` mediumtext,
+        // `merged_story_id` int,
+        // `unavailable_at` datetime,
+        // `twitter_id` varchar(20),
+        // `user_is_author` tinyint(1) DEFAULT 0,
+        table.insert(
+            vec![ 1.into(), // id
+                  0.into(), // always_null
+                  self.gen_date(), // created_at
+                  NULL, // user_id
+                  self.gen_str(20), // url
+                  "First Story".into(), // title
+                  NULL, // description
+                  "".into(), // short_id
+                  0.into(), // is_expired
+                  0.into(), // is_moderated
+                  NULL, // markeddown_description
+                  NULL, // story_cache
+                  NULL, // merged_story_id
+                  NULL, // unavailable_at
+                  NULL, // twitter_id
+                  0.into() // user_is_author
+            ]).await?;
 
+        table.insert(
+            vec![ 2.into(), // id
+                  0.into(), // always_null
+                  self.gen_date(), // created_at
+                  NULL, // user_id
+                  self.gen_str(20), // url
+                  "Second Story".into(), // title
+                  NULL, // description
+                  "".into(), // short_id
+                  0.into(), // is_expired
+                  0.into(), // is_moderated
+                  NULL, // markeddown_description
+                  NULL, // story_cache
+                  NULL, // merged_story_id
+                  NULL, // unavailable_at
+                  NULL, // twitter_id
+                  0.into() // user_is_author
+            ]).await?;
 
+        table.insert(
+            vec![ 5.into(), // id
+                  0.into(), // always_null
+                  self.gen_date(), // created_at
+                  NULL, // user_id
+                  self.gen_str(20), // url
+                  "Third Story".into(), // title
+                  NULL, // description
+                  "".into(), // short_id
+                  0.into(), // is_expired
+                  0.into(), // is_moderated
+                  NULL, // markeddown_description
+                  NULL, // story_cache
+                  NULL, // merged_story_id
+                  NULL, // unavailable_at
+                  NULL, // twitter_id
+                  0.into() // user_is_author
+            ]).await?;
 
-        table.insert(vec![5.into(), self.gen_date(), 5.into(), self.gen_str(20), "Fourth Story".into(), NULL, "".into(), 0.into(), 10.into(), 2.into(), 0.into(), 0.0.into(), NULL, NULL, 0.into(), NULL, NULL, NULL, 0.into()]).await?;
-        table.insert(vec![6.into(), self.gen_date(), 6.into(), self.gen_str(20), "Fifth Story".into(), NULL, "".into(), 0.into(), 10.into(), 2.into(), 0.into(), 0.0.into(), NULL, NULL, 0.into(), NULL, NULL, NULL, 0.into()]).await?;
+        table.insert(
+            vec![ 6.into(), // id
+                  0.into(), // always_null
+                  self.gen_date(), // created_at
+                  NULL, // user_id
+                  self.gen_str(20), // url
+                  "Fourth Story".into(), // title
+                  NULL, // description
+                  "".into(), // short_id
+                  0.into(), // is_expired
+                  0.into(), // is_moderated
+                  NULL, // markeddown_description
+                  NULL, // story_cache
+                  NULL, // merged_story_id
+                  NULL, // unavailable_at
+                  NULL, // twitter_id
+                  0.into() // user_is_author
+            ]).await?;
+
+        table.insert(
+            vec![ 0.into(), // id
+                  0.into(), // always_null
+                  self.gen_date(), // created_at
+                  NULL, // user_id
+                  self.gen_str(20), // url
+                  "First Story".into(), // title
+                  NULL, // description
+                  "".into(), // short_id
+                  0.into(), // is_expired
+                  0.into(), // is_moderated
+                  NULL, // markeddown_description
+                  NULL, // story_cache
+                  NULL, // merged_story_id
+                  NULL, // unavailable_at
+                  NULL, // twitter_id
+                  0.into() // user_is_author
+            ]).await?;
+
         Ok(())
     }
 
@@ -167,12 +239,12 @@ impl DataGen {
         // `disabled_invite_by_user_id` int
         // `disabled_invite_reason` varchar(200)
         // `settings` text
-        table.insert(vec![0.into(), "first".into(), NULL, NULL, self.gen_date(), 1.into(), NULL, "".into(), NULL, NULL, 1.into(), 0.into(), NULL, NULL, 0.into(), 10.into(), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL]).await?;
-        table.insert(vec![1.into(), "second".into(), NULL, NULL, self.gen_date(), 0.into(), NULL, "".into(), NULL, NULL, 0.into(), 0.into(), NULL, NULL, 0.into(), 10.into(), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL]).await?;
-        table.insert(vec![2.into(), "third".into(), NULL, NULL, self.gen_date(), 0.into(), NULL, "".into(), NULL, NULL, 0.into(), 0.into(), NULL, NULL, 0.into(), 10.into(), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL]).await?;
+        table.insert(vec![0.into(), "first".into(), 10.into()]).await?;
+        table.insert(vec![1.into(), "second".into(), 11.into()]).await?;
+        table.insert(vec![2.into(), "third".into(), 12.into()]).await?;
 
-        table.insert(vec![5.into(), "fourth".into(), NULL, NULL, self.gen_date(), 0.into(), NULL, "".into(), NULL, NULL, 0.into(), 0.into(), NULL, NULL, 0.into(), 10.into(), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL]).await?;
-        table.insert(vec![6.into(), "fifth".into(), NULL, NULL, self.gen_date(), 0.into(), NULL, "".into(), NULL, NULL, 0.into(), 0.into(), NULL, NULL, 0.into(), 10.into(), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL]).await?;
+        table.insert(vec![5.into(), "fourth".into(), 13.into()]).await?;
+        table.insert(vec![6.into(), "fifth".into(), 14.into()]).await?;
         Ok(())
     }
 
@@ -201,14 +273,12 @@ impl DataGen {
         Ok(())
     }
 
-    async fn load_data(&mut self, ctrl: &mut Handle) -> LoadRes {
-        self.load_users(ctrl).await?;
-        self.load_stories(ctrl).await?;
-        self.load_comments(ctrl).await?;
-        self.load_ribbons(ctrl).await?;
-        self.load_votes(ctrl).await?;
-        Ok(())
-
+    async fn load_data(&mut self, ctrl: &mut Handle) -> () {
+        self.load_users(ctrl).await.unwrap();
+        self.load_stories(ctrl).await.unwrap();
+        self.load_comments(ctrl).await.unwrap();
+        self.load_ribbons(ctrl).await.unwrap();
+        self.load_votes(ctrl).await.unwrap();
     }
 }
 
@@ -222,13 +292,12 @@ async fn main() {
     let mut a_it = std::env::args();
     a_it.next().unwrap();
     let func = a_it.next().unwrap();
-    let mut ctrl : Handle = {
+    let (mut ctrl, done ) = {
         let mut b = noria::Builder::default();
-        //b.log_with(noria::logger_pls());
-        let (h, done) = b.start_local().await.unwrap();
-        done.await;
-        h
+        b.log_with(noria::logger_pls());
+        b.start_local().await.unwrap()
     };
+    eprintln!("Noria started");
 
     let mut current_q = String::new();
     let gen_num_rows = 20;
@@ -267,10 +336,12 @@ async fn main() {
         }
     }
 
-    ctrl.extend_recipe(SQL_Q).await.unwrap();
-    println!("Query installed");
+    eprintln!("Tables installed");
 
-    DataGen::new().load_data(&mut ctrl).await.unwrap();
+    // ctrl.extend_recipe(SQL_Q).await.unwrap();
+    // println!("Query installed");
+
+    DataGen::new().load_data(&mut ctrl).await;
     let (udf, udf_input_tables) =
         // ("main", vec!["read_ribbons", "stories", "comments", "comments", "votes"])
         // ("main0", vec!["read_ribbons"])
@@ -311,4 +382,5 @@ async fn main() {
     // }
 
 
+    done.await;
 }

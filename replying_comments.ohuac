@@ -223,7 +223,7 @@ fn main5(ribbons: Stream<Ribbon>, stories: Stream<Story>, comments: Stream<Comme
 fn main6() -> Table<Result> {
     for ribbon in ohua::sql::table::read_ribbons.filter(|r| r.is_following) {
 
-        let c1 = ohua::sql::table::comments
+        let c1 = ohua::sql::table::comment_with_votes
             .filter(|c| eq(c.story_id, ribbon.story_id));
         let c2 = c1
             .filter(|c| neq(c.user_id, ribbon.user_id));
@@ -233,7 +233,7 @@ fn main6() -> Table<Result> {
             .filter(|x| geq(x.upvotes, x.downvotes))
         {
 
-            let s1 = ohua::sql::table::stories
+            let s1 = ohua::sql::table::story_with_votes
                 .filter(|s| eq(s.field::id, comment.story_id));
 
             // this should error of the target does not exist actually and it also should only return one
@@ -262,121 +262,6 @@ fn main6() -> Table<Result> {
                               vote.reason
                             )
                         }
-                    }
-                }
-            }
-        }
-    }
-}
-
-fn main8() -> Table<Result> {
-    let ribbons = ohua::sql::table::read_ribbons;
-    let stories = ohua::sql::table::stories;
-    let comments = ohua::sql::table::comments;
-    let also_comments = ohua::sql::table::parent_comments;
-    let votes = ohua::sql::table::votes;
-
-    for ribbon in ribbons.filter(|r| r.is_following) {
-
-        let c1 = comments
-            .filter(|c| eq(c.story_id, ribbon.story_id));
-        let c2 = c1
-            .filter(|c| neq(c.user_id, ribbon.user_id));
-        let c3 = c2
-            .filter(|c| and(not(c.is_deleted), not(c.is_moderated)));
-        for comment in c3
-            .filter(|x| geq(x.upvotes, x.downvotes))
-        {
-
-            let s1 = stories
-                .filter(|s| eq(s.field::id, comment.story_id));
-
-            // this should error of the target does not exist actually and it also should only return one
-            for story in s1
-                .filter(|x| geq(x.upvotes, x.downvotes))
-            {
-                // This should be None if no parent exists
-                for parent in also_comments.filter(|c| eq(c.field::id, comment.parent_comment_id)) {
-
-                    let v1 = votes
-                        .filter(|v| and(eq(v.user_id, ribbon.user_id), eq(v.comment_id, comment.field::id)));
-                    for vote in v1
-                        .filter(|v| geq(parent.upvotes, parent.downvotes))
-                    {
-                            ( ribbon.user_id,
-                              comment.field::id,
-                              ribbon.story_id,
-                              comment.parent_comment_id,
-                              comment.created_at,
-                              parent.user_id,
-                              comment.user_id,
-                              story.user_id,
-                              lt(ribbon.updated_at, comment.created_at),
-                              vote.field::vote,
-                              vote.reason
-                            )
-                    }
-                }
-            }
-        }
-    }
-}
-
-fn main9() -> Table<Result> {
-    for c in ohua::sql::table::comments {
-        for p in ohua::sql::table::parent_comments.filter(|p| eq(p.field::id, c.parent_comment_id)) {
-            (c.field::id, c.parent_comment_id, p.field::id, p.user_id)
-        }
-    }
-
-}
-
-fn main8() -> Table<Result> {
-    let ribbons = ohua::sql::table::read_ribbons;
-    let stories = ohua::sql::table::stories;
-    let comments = ohua::sql::table::comments;
-    let also_comments = ohua::sql::table::parent_comments;
-    let votes = ohua::sql::table::votes;
-
-    for ribbon in ribbons.filter(|r| r.is_following) {
-
-        let c1 = comments
-            .filter(|c| eq(c.story_id, ribbon.story_id));
-        let c2 = c1
-            .filter(|c| neq(c.user_id, ribbon.user_id));
-        let c3 = c2
-            .filter(|c| and(not(c.is_deleted), not(c.is_moderated)));
-        for comment in c3
-            .filter(|x| geq(x.upvotes, x.downvotes))
-        {
-
-            let s1 = stories
-                .filter(|s| eq(s.field::id, comment.story_id));
-
-            // this should error of the target does not exist actually and it also should only return one
-            for story in s1
-                .filter(|x| geq(x.upvotes, x.downvotes))
-            {
-                // This should be None if no parent exists
-                for parent in also_comments.filter(|c| eq(c.field::id, comment.parent_comment_id)) {
-
-                    let v1 = votes
-                        .filter(|v| and(eq(v.user_id, ribbon.user_id), eq(v.comment_id, comment.field::id)));
-                    for vote in v1
-                        .filter(|v| geq(parent.upvotes, parent.downvotes))
-                    {
-                            ( ribbon.user_id,
-                              comment.field::id,
-                              ribbon.story_id,
-                              comment.parent_comment_id,
-                              comment.created_at,
-                              parent.user_id,
-                              comment.user_id,
-                              story.user_id,
-                              lt(ribbon.updated_at, comment.created_at),
-                              vote.field::vote,
-                              vote.reason
-                            )
                     }
                 }
             }
