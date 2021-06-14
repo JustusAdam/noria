@@ -165,9 +165,9 @@ fn main4(ribbons: Stream<Ribbon>, stories: Stream<Story>,  comments: Stream<Comm
 
 #[ohua::noria_integration::make_udf]
 fn or_cond(parent_user_id : i64, ribbon_user_id : i64, story_user_id : i64) -> i64 {
-   if std::cmp::PartialEq::eq(&parent_user_id, &ribbon_user_id) {
+   if parent_user_id == ribbon_user_id {
        1
-   } else if std::cmp::PartialEq::eq(&story_user_id, &ribbon_user_id) {
+   } else if story_user_id == ribbon_user_id {
        1
    } else { 0 }
 }

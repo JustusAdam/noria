@@ -119,7 +119,7 @@ impl DataGen {
             vec![ 1.into(), // id
                   0.into(), // always_null
                   self.gen_date(), // created_at
-                  NULL, // user_id
+                  1.into(), // user_id
                   self.gen_str(20), // url
                   "First Story".into(), // title
                   NULL, // description
@@ -138,7 +138,7 @@ impl DataGen {
             vec![ 2.into(), // id
                   0.into(), // always_null
                   self.gen_date(), // created_at
-                  NULL, // user_id
+                  5.into(), // user_id
                   self.gen_str(20), // url
                   "Second Story".into(), // title
                   NULL, // description
@@ -157,7 +157,7 @@ impl DataGen {
             vec![ 5.into(), // id
                   0.into(), // always_null
                   self.gen_date(), // created_at
-                  NULL, // user_id
+                  5.into(), // user_id
                   self.gen_str(20), // url
                   "Third Story".into(), // title
                   NULL, // description
@@ -176,7 +176,7 @@ impl DataGen {
             vec![ 6.into(), // id
                   0.into(), // always_null
                   self.gen_date(), // created_at
-                  NULL, // user_id
+                  5.into(), // user_id
                   self.gen_str(20), // url
                   "Fourth Story".into(), // title
                   NULL, // description
@@ -195,7 +195,7 @@ impl DataGen {
             vec![ 0.into(), // id
                   0.into(), // always_null
                   self.gen_date(), // created_at
-                  NULL, // user_id
+                  5.into(), // user_id
                   self.gen_str(20), // url
                   "First Story".into(), // title
                   NULL, // description
@@ -290,11 +290,12 @@ type LoadRes = Result<(), failure::Error>;
 #[tokio::main]
 async fn main() {
     let mut a_it = std::env::args();
-    a_it.next().unwrap();
-    let func = a_it.next().unwrap();
+    a_it.next().expect("Missing executable name");
+    let func = a_it.next().expect("Expected view name as singular argument to this executable");
     let (mut ctrl, done ) = {
         let mut b = noria::Builder::default();
         b.log_with(noria::logger_pls());
+        b.disable_partial();
         b.start_local().await.unwrap()
     };
     eprintln!("Noria started");
@@ -357,6 +358,8 @@ async fn main() {
 
     ctrl.install_udtf(udf, &udf_input_tables).await.unwrap();
     println!("UDTF installed");
+
+    tokio::time::delay_for(std::time::Duration::from_secs(10)).await;
 
 
     {

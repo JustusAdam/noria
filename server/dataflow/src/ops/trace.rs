@@ -9,12 +9,13 @@ pub struct Trace {
     src: IndexPair,
     tag: usize,
     batch: usize,
+    cols: Option<Vec<String>>,
 }
 
 impl Trace {
     /// Construct a new identity operator.
-    pub fn new(tag: usize, src: NodeIndex) -> Self {
-        Self { src: src.into(), tag, batch: 0 }
+    pub fn new(tag: usize, src: NodeIndex, cols: Option<Vec<String>>) -> Self {
+        Self { src: src.into(), tag, batch: 0, cols }
     }
 }
 
@@ -45,7 +46,16 @@ impl Ingredient for Trace {
         eprintln!("Tracer {} batch {}:", self.tag, self.batch);
         self.batch += 1;
         for r in rs.iter() {
-            eprintln!("   {:?}", r);
+            eprint!("   {} ", if r.is_positive() { "+" } else { "-" });
+            if let Some(cols) = &self.cols {
+                eprint!("[");
+                for (i, l) in r.iter().zip(cols.iter()) {
+                    eprint!("{} = {}, ", l, i);
+                }
+                eprintln!("]");
+            } else {
+                eprintln!("{:?}", *r);
+            }
         }
         ProcessingResult {
             results: rs,

@@ -84,7 +84,7 @@ impl UDTFIncorporator {
         let mut output = non_key_output_cols.clone();
         output.push(key_col.clone());
 
-        let bottom = {
+        let ref mut bottom = {
             MirNode::new(
                 format!("{}-exit", &name).as_ref(),
                 schema_version,
@@ -199,8 +199,8 @@ impl UDTFIncorporator {
             link(n_ref.clone(), adj);
         }
         for idx in trace_these {
-            println!("Tracing {}", idx);
             let n = &adjacencies[idx].0;
+            debug!(self.log, "Tracing {}: {}", idx, n.borrow().name());
             let cols = n.borrow().columns.clone();
             let mut outs = vec![];
             std::mem::swap(&mut n.borrow_mut().children, &mut outs);
@@ -218,6 +218,9 @@ impl UDTFIncorporator {
                         *a = new.clone()
                     }
                 }
+            }
+            if idx == 0 {
+                *bottom = new;
             }
         }
 
