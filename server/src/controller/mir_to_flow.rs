@@ -277,7 +277,7 @@ fn mir_node_to_flow_parts(
                     let node = mig.add_ingredient(
                         String::from(name),
                         column_names.as_slice(),
-                        ops::trace::Trace::new(tag, parent_na),
+                        ops::trace::Trace::new(tag, parent_na, Some(parent.borrow().columns.iter().map(|c| format!("{}.{}", c.table.as_ref().unwrap_or(&"?".to_string()), c.name )).collect())),
                     );
                     FlowNode::New(node)
                 }

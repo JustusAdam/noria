@@ -5,6 +5,9 @@ extern crate rand;
 extern crate chrono;
 extern crate failure;
 
+#[macro_use]
+extern crate clap;
+
 extern crate tokio;
 
 use rand::prelude as rp;
@@ -285,23 +288,42 @@ impl DataGen {
 type Handle = noria::Handle<noria::LocalAuthority>;
 type LoadRes = Result<(), failure::Error>;
 
-
+const OPT_DISABLE_PARTIAL : &'static str = "disable-partial";
+const OPT_ENABLE_LOGGING : &'static str = "noria-logging";
+const ARG_UDF_NAME : &'static str = "udf";
+const ARG_TABLES : &'static str = "tables";
 
 #[tokio::main]
 async fn main() {
-    let mut a_it = std::env::args();
-    a_it.next().expect("Missing executable name");
-    let func = a_it.next().expect("Expected view name as singular argument to this executable");
+    let matches = app_from_crate!()
+        .about("Non-integrated ohua-udfs version of lobsters benchmark for testing purposes.")
+        .args(&[
+            clap::Arg::with_name(OPT_DISABLE_PARTIAL)
+                .long("disable-partial")
+                .help("Disable partial materialization for the noria instance"),
+            clap::Arg::with_name(OPT_ENABLE_LOGGING)
+                .long("noria-logging")
+                .help("Turn on logging for noria"),
+            clap::Arg::with_name(ARG_UDF_NAME)
+                .required(true)
+                .help("Which udf to run"),
+            clap::Arg::with_name(ARG_TABLES)
+                .multiple(true)
+                .help("Table arguments for the UDF"),
+        ]).get_matches();
     let (mut ctrl, done ) = {
         let mut b = noria::Builder::default();
-        b.log_with(noria::logger_pls());
-        b.disable_partial();
+        if matches.is_present(OPT_ENABLE_LOGGING) {
+            b.log_with(noria::logger_pls())
+        }
+        if matches.is_present(OPT_DISABLE_PARTIAL) {
+            b.disable_partial()
+        }
         b.start_local().await.unwrap()
     };
     eprintln!("Noria started");
 
     let mut current_q = String::new();
-    let gen_num_rows = 20;
 
     for line in SCHEMA.lines().filter(|l| !l.starts_with("--") && !l.is_empty() ) {
         if !current_q.is_empty() {
@@ -343,18 +365,8 @@ async fn main() {
     // println!("Query installed");
 
     DataGen::new().load_data(&mut ctrl).await;
-    let (udf, udf_input_tables) =
-        // ("main", vec!["read_ribbons", "stories", "comments", "comments", "votes"])
-        // ("main0", vec!["read_ribbons"])
-        // ("main1", vec!["read_ribbons", "comments"])
-        // ("main2", vec!["read_ribbons", "stories", "comments"])
-        // ("main3", vec!["read_ribbons", "stories", "comments", "comments"])
-        // ("main4", vec!["read_ribbons", "stories", "comments", "comments", "votes"])
-          //("main5", vec!["read_ribbons", "stories", "comments", "comments", "votes"])
-        // ("main7", vec![])
-    // ("main8", vec![])
-        (&func, vec![])
-        ;
+    let udf = matches.value_of(ARG_UDF_NAME).expect("UDF name needs to be provided");
+    let udf_input_tables = matches.values_of(ARG_TABLES).map(|t| t.into_iter().collect()).unwrap_or_else(|| vec![]);
 
     ctrl.install_udtf(udf, &udf_input_tables).await.unwrap();
     println!("UDTF installed");
@@ -369,6 +381,7 @@ async fn main() {
     }
     {
         let mut view = ctrl.view(udf).await.expect("UDTF not found");
+        println!("Retrieved view for node {:?}", view.node);
         // let cols = view.columns();
 
         for r in view.lookup(&vec![0.into()], true).await.unwrap().into_iter() {
