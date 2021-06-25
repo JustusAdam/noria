@@ -7,6 +7,7 @@ extern crate mysql_async as my;
 #[macro_use]
 extern crate failure;
 
+
 use clap::{App, Arg};
 use futures::future::Either;
 use futures::{Future, IntoFuture, Stream};
@@ -52,14 +53,16 @@ struct MysqlTrawler {
     variant: Variant,
     tokens: HashMap<u32, String>,
     simulate_shards: Option<u32>,
+    notifications_only: bool,
 }
 impl MysqlTrawler {
-    fn new(variant: Variant, opts: my::OptsBuilder, simulate_shards: Option<u32>) -> Self {
+    fn new(variant: Variant, opts: my::OptsBuilder, simulate_shards: Option<u32>, notifications_only: bool) -> Self {
         MysqlTrawler {
             c: MaybeConn::None(opts),
             tokens: HashMap::new(),
             simulate_shards,
             variant,
+            notifications_only,
         }
     }
 }
@@ -96,10 +99,11 @@ impl trawler::LobstersClient for MysqlTrawler {
         let db_use = format!("USE {}", db);
         Box::new(
             c.get_conn()
-                .and_then(move |c| c.drop_query(&db_drop))
-                .and_then(move |c| c.drop_query(&db_create))
-                .and_then(move |c| c.drop_query(&db_use))
+                .and_then(move |c| { println!("Dropping!"); c.drop_query(&db_drop) })
+                .and_then(move |c| { println!("Creating!"); c.drop_query(&db_create) })
+                .and_then(move |c| { println!("Using!"); c.drop_query(&db_use) })
                 .then(move |r| {
+                    println!("Reached 1");
                     let c = r.unwrap();
                     let schema = match variant {
                         Variant::Original => ORIGINAL_SCHEMA,
@@ -117,6 +121,7 @@ impl trawler::LobstersClient for MysqlTrawler {
                             }
                             current_q.push_str(line);
                             if current_q.ends_with(';') {
+                                println!("Running query {}", current_q);
                                 Either::B(c.drop_query(&current_q).then(
                                     move |r| -> Result<_, my::error::Error> {
                                         let c = r.unwrap();
@@ -254,11 +259,24 @@ impl trawler::LobstersClient for MysqlTrawler {
             }
         };
 
-        let c = match self.variant {
-            Variant::Original => handle_req!(original, req),
-            Variant::Noria => handle_req!(noria, req),
-            Variant::Natural => handle_req!(natural, req),
-            Variant::Ohua => handle_req!(ohua, req),
+        fn is_read(r: &trawler::LobstersRequest) -> bool {
+            use trawler::LobstersRequest::*;
+            match r {
+                Frontpage | Recent | Comments | User(_) | Story (_) => true,
+                _ => false,
+            }
+        }
+
+        let c = if self.notifications_only && is_read(&req) {
+            Either::A(c.map(|c| (c, true)))
+        } else {
+            Either::B(
+            match self.variant {
+                Variant::Original => handle_req!(original, req),
+                Variant::Noria => handle_req!(noria, req),
+                Variant::Natural => handle_req!(natural, req),
+                Variant::Ohua => handle_req!(ohua, req),
+            })
         };
 
         // notifications
@@ -372,6 +390,11 @@ fn main() {
                 .default_value("mysql://lobsters@localhost/soup")
                 .index(1),
         )
+        .arg(
+            Arg::with_name("notifications-only")
+                .long("notifications-only")
+                .help("Only execute the notification queries during reads")
+        )
         .get_matches();
 
     let variant = match args.value_of("queries").unwrap() {
@@ -411,7 +434,7 @@ fn main() {
     let mut opts = my::OptsBuilder::from_opts(args.value_of("dbn").unwrap());
     opts.tcp_nodelay(true);
     opts.pool_constraints(my::PoolConstraints::new(in_flight, in_flight));
-    let s = MysqlTrawler::new(variant, opts.into(), simulate_shards);
+    let s = MysqlTrawler::new(variant, opts.into(), simulate_shards, args.is_present("notifications-only"));
 
     wl.run(s, args.is_present("prime"));
 }

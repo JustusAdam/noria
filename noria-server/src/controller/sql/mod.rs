@@ -7,7 +7,7 @@ mod reuse;
 pub(super) mod security;
 mod udf;
 
-use self::mir::SqlToMirConverter;
+pub(super) use self::mir::SqlToMirConverter;
 use self::query_graph::{to_query_graph, QueryGraph};
 use self::query_signature::Signature;
 use self::reuse::ReuseConfig;
@@ -637,7 +637,7 @@ impl SqlIncorporator {
         self.mir_converter.remove_base(name, mir)
     }
 
-    fn register_query(
+    pub(super) fn register_query(
         &mut self,
         query_name: &str,
         qg: Option<QueryGraph>,
@@ -928,6 +928,10 @@ impl SqlIncorporator {
         );
         self.schema_version = new_version;
         self.mir_converter.upgrade_schema(new_version);
+    }
+
+    pub(super) fn get_converter_mut(&mut self) -> &mut SqlToMirConverter {
+        &mut self.mir_converter
     }
 }
 

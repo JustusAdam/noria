@@ -105,7 +105,7 @@ fn vec_replace_with_where<T: Clone, F: Fn(&T) -> bool>(v: &mut Vec<T>, f: F, t: 
 }
 
 #[derive(Clone, Debug)]
-pub(super) struct SqlToMirConverter {
+pub(crate) struct SqlToMirConverter {
     base_schemas: HashMap<String, Vec<(usize, Vec<ColumnSpecification>)>>,
     current: HashMap<String, usize>,
     log: slog::Logger,
@@ -130,6 +130,16 @@ impl Default for SqlToMirConverter {
 }
 
 impl SqlToMirConverter {
+    pub(crate) fn register_node(&mut self, id: (String, usize), node: MirNodeRef) {
+        let r = self.nodes.insert(id, node);
+        debug_assert!(r.is_none());
+    }
+
+    pub(crate) fn register_view(&mut self, name: String, version: usize) {
+        let r = self.current.insert(name, version);
+        debug_assert!(r.is_none());
+    }
+
     pub(super) fn with_logger(log: slog::Logger) -> Self {
         SqlToMirConverter {
             log,

@@ -1062,14 +1062,17 @@ impl ControllerInner {
             bases
         };
         debug!(self.log, "{} bases found", bases.len());
-        let q = self
-            .udtf_incorporator
-            .as_ref()
-            .ok_or("Incorporator must exist now")?
-            .as_mir_query(name, &tables, bases, |n| {
+        let (q, schema_version) = {
+            let udtf_inc = self.udtf_incorporator
+                .as_ref()
+                .ok_or("Incorporator must exist now")?;
+            let s = udtf_inc.schema_version;
+            (udtf_inc.as_mir_query(name, &tables, bases, |n| {
                 self.recipe.sql_inc().get_view(n).unwrap().clone()
-            })?;
+            })?, s)
+        };
         debug!(self.log, "Query created, starting migration");
+        let leaf = q.leaf.clone();
         let ref log = self.log.clone();
         self.migrate(|mig| -> Result<(), String> {
             let table_mapping = None; // Do I need to compute this somehow?
@@ -1078,6 +1081,13 @@ impl ControllerInner {
             debug!(log, "MIR optimized, creating flow parts");
             let _ = // what should I do with this result?
                 super::mir_to_flow::mir_query_to_flow_parts(&mut opt_mir, mig, table_mapping);
+            let uni = mig.universe();
+            let inc = mig.mainline.recipe.sql_inc_mut();
+            inc.register_query(name, None, &opt_mir, uni);
+            let conv = inc.get_converter_mut();
+
+            conv.register_node((name.to_string(), schema_version), leaf);
+            conv.register_view(name.to_string(), schema_version);
             debug!(log, "Finished creating migration, committing");
             Ok(())
         })?;

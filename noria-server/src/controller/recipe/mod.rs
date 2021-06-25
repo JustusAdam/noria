@@ -575,6 +575,10 @@ impl Recipe {
         self.inc.as_ref().unwrap()
     }
 
+    pub(super) fn sql_inc_mut(&mut self) -> &mut SqlIncorporator {
+        self.inc.as_mut().unwrap()
+    }
+
     /// Helper method to reparent a recipe. This is needed for some of t
     pub(in crate::controller) fn set_sql_inc(&mut self, new_inc: SqlIncorporator) {
         self.inc = Some(new_inc);

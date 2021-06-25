@@ -17,7 +17,7 @@ pub type Columns = Vec<Column>;
 /// resulting vector.
 pub struct UDFGraph {
     pub adjacency_list: Vec<(MirNodeType, Columns, Vec<usize>)>,
-    pub sink: (usize, Columns),
+    pub sink: (usize, Columns, Columns),
     pub sources: (Vec<Columns>, Vec<(String, Columns)>),
 }
 
@@ -28,11 +28,12 @@ pub enum ExecutionType {
 
 pub struct UDTFIncorporator {
     log: slog::Logger,
+    pub schema_version: usize,
 }
 
 impl UDTFIncorporator {
     pub fn new(log: slog::Logger) -> UDTFIncorporator {
-        UDTFIncorporator { log }
+        UDTFIncorporator { log, schema_version: 0 }
     }
 
     pub fn is_defined(&self, name: &str) -> bool {
@@ -76,12 +77,11 @@ impl UDTFIncorporator {
             .ok_or(format!("No UDTF named '{}' found", name))?(&new_tables);
 
         let mut roots: Vec<MirNodeRef> = bases;
-        let schema_version = 0;
+        let schema_version = self.schema_version;
 
         let key_col_name = format!("{}-gen-key", name);
         let key_col = Column::new(None, &key_col_name);
-        let ref non_key_output_cols = gr.sink.1.clone();
-        let mut output = non_key_output_cols.clone();
+        let mut output = gr.sink.2.clone();
         output.push(key_col.clone());
 
         let bottom = {
@@ -90,7 +90,7 @@ impl UDTFIncorporator {
                 schema_version,
                 output.clone(),
                 MirNodeType::Project {
-                    emit: non_key_output_cols.clone(),
+                    emit: gr.sink.1.clone(),
                     literals: vec![(key_col_name, 0.into())],
                     arithmetic: vec![],
                 },
@@ -172,7 +172,7 @@ impl UDTFIncorporator {
                 let name = match inner {
                     MirNodeType::UDFBasic {
                         ref function_name, ..
-                    } => function_name.clone(),
+                    } => format!("{}-n{}", function_name, i),
                     _ => format!("{}-n{}", &name, i),
                 };
                 let n = MirNode::new(name.as_ref(), schema_version, cols, inner, vec![], vec![]);

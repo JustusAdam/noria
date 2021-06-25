@@ -341,14 +341,15 @@ impl<A: Authority + 'static> ControllerHandle<A> {
                     Ok(Some(tb)) => future::Either::A(
                         tb.build(domains)
                             .into_future()
-                            .map_err(failure::Error::from),
+                            .map_err(failure::Error::from)
+                            .map_err(|e| e.context("1")),
                     ),
                     Ok(None) => {
-                        future::Either::B(future::err(failure::err_msg("view table not exist")))
+                        future::Either::B(future::err(failure::err_msg("view table not exist").context("3")))
                     }
-                    Err(e) => future::Either::B(future::err(failure::Error::from(e))),
-                }
-                .map_err(move |e| e.context(format!("building table for {}", name)).into())
+                    Err(e) => future::Either::B(future::err(failure::Error::from(e).context("2"))),
+                }.map_err(failure::Error::from)
+                //.map_err(move |e| e.context(format!("building table for {}", name)).into())
             })
     }
 

@@ -30,5 +30,5 @@ name = "sir-read-a-lot"
 path = "read_a_lot/main.rs"
 
 [[bin]]
-name = "lobsters"
+name = "lobsters-test"
 path = "lobsters/main.rs"

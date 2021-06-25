@@ -15,12 +15,13 @@ pub mod user {
     use super::*;
     pub(crate) fn handle<F>(
         c: F,
-        _acting_as: Option<UserId>,
+        acting_as: Option<UserId>,
         uid: UserId,
     ) -> Box<dyn Future<Item = (my::Conn, bool), Error = my::error::Error> + Send>
     where
         F: 'static + Future<Item = my::Conn, Error = my::error::Error> + Send,
     {
+        //crate::endpoints::noria::user::handle(c, acting_as, uid)
         unimplemented!("user")
     }
 }
@@ -34,7 +35,8 @@ pub mod frontpage {
     where
         F: 'static + Future<Item = my::Conn, Error = my::error::Error> + Send,
     {
-        unimplemented!("user")
+
+        crate::endpoints::noria::frontpage::handle(c, acting_as)
     }
 }
 
