@@ -8,7 +8,7 @@ macro_rules! unimplemented {
         Box::new(
             failed(my::error::Error::Other(format_err!("Endpoint `{}` is not implemented for this backend (ohua)", $s)))
         )
-        }
+    }
 }
 
 pub mod user {
@@ -21,8 +21,7 @@ pub mod user {
     where
         F: 'static + Future<Item = my::Conn, Error = my::error::Error> + Send,
     {
-        //crate::endpoints::noria::user::handle(c, acting_as, uid)
-        unimplemented!("user")
+        crate::endpoints::noria::user::handle(c, acting_as, uid)
     }
 }
 
@@ -49,7 +48,7 @@ pub mod comments {
     where
         F: 'static + Future<Item = my::Conn, Error = my::error::Error> + Send,
     {
-        unimplemented!("comments")
+        crate::endpoints::noria::comments::handle(c, acting_as)
     }
 }
 
@@ -62,7 +61,7 @@ pub mod recent {
     where
         F: 'static + Future<Item = my::Conn, Error = my::error::Error> + Send,
     {
-        unimplemented!("recent")
+        crate::endpoints::noria::recent::handle(c, acting_as)
     }
 }
 
@@ -77,7 +76,7 @@ pub mod story {
     where
         F: 'static + Future<Item = my::Conn, Error = my::error::Error> + Send,
     {
-        unimplemented!("story")
+        crate::endpoints::noria::story::handle(c, acting_as, simulate_shards, id)
     }
 }
 
@@ -92,7 +91,7 @@ pub mod story_vote {
     where
         F: 'static + Future<Item = my::Conn, Error = my::error::Error> + Send,
     {
-        unimplemented!("story_vote")
+        crate::endpoints::noria::story_vote::handle(c, acting_as, story, v)
     }
 }
 pub mod comment_vote {
@@ -106,7 +105,7 @@ pub mod comment_vote {
     where
         F: 'static + Future<Item = my::Conn, Error = my::error::Error> + Send,
     {
-        unimplemented!("comment_vote")
+        crate::endpoints::noria::comment_vote::handle(c, acting_as, comment, v)
     }
 }
 pub mod submit {
@@ -120,7 +119,7 @@ pub mod submit {
     where
         F: 'static + Future<Item = my::Conn, Error = my::error::Error> + Send,
     {
-        unimplemented!("submit")
+        crate::endpoints::noria::submit::handle(c, acting_as, id, title)
     }
 }
 pub mod comment {
@@ -135,7 +134,7 @@ pub mod comment {
     where
         F: 'static + Future<Item = my::Conn, Error = my::error::Error> + Send,
     {
-        unimplemented!("comment")
+        crate::endpoints::noria::comment::handle(c, acting_as, id, story, parent)
     }
 }
 
@@ -144,11 +143,9 @@ pub(crate) fn notifications(
     uid: u32,
 ) -> impl Future<Item = my::Conn, Error = my::error::Error> {
     c.drop_exec(
-        "SELECT COUNT(*) \
-         FROM `replying_comments_for_count`
-                     WHERE `replying_comments_for_count`.`user_id` = ? \
-                     GROUP BY `replying_comments_for_count`.`user_id` \
-                     ",
+        "SELECT BOUNDARY_notifications.notifications
+         FROM BOUNDARY_notifications
+         WHERE BOUNDARY_notifications.user_id = ?",
         (uid,),
     )
         .and_then(move |c| {
